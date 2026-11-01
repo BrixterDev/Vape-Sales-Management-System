@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck & build shared
+        run: npm run build --workspace shared
+
+      - name: Typecheck backend
+        run: npm run typecheck --workspace backend
+
+      - name: Typecheck & build frontend
+        run: npm run build --workspace frontend
+
+      - name: Guard against leaked service keys
+        run: |
+          if grep -rniE "service_role|SUPABASE_SERVICE_ROLE_KEY" frontend/src frontend/dist 2>/dev/null | grep -v "VITE_" ; then
+            echo "Service role reference found in frontend code"
+            exit 1
+          fi
