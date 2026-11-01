@@ -173,6 +173,10 @@ export const updateSaleSchema = z
   })
   .refine((v) => Object.keys(v).length > 0, "No changes supplied");
 
+export const editSaleSchema = createSaleSchema.omit({ idempotency_key: true }).extend({
+  reason: z.string().trim().min(3).max(500),
+});
+
 export const salesQuerySchema = paginationSchema.extend({
   search: z.string().trim().max(120).optional(),
   customer_id: uuid.optional(),

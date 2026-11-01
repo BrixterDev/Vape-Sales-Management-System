@@ -166,6 +166,10 @@ export interface Sale {
 export interface SaleWithBalance extends Sale {
   balance: number;
   item_count: number;
+  /** Line items for this sale (cost masked for cashiers at the view level). */
+  items?: SaleItem[];
+  /** Payment history for this sale (empty for list rows without payments). */
+  payments?: Payment[];
 }
 
 export interface SaleDetail extends SaleWithBalance {

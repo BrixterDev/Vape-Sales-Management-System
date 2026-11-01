@@ -489,6 +489,56 @@ begin
 end;
 $$;
 
+-- A batch may only contain items of a single brand.
+insert into public.brands (id, name)
+values ('55555555-5555-4555-8555-555555455555', 'Smoke Brand Two');
+
+insert into public.products (
+  id, sku, name, brand_id, flavor, selling_price, low_stock_threshold
+)
+values
+  ('55555555-5555-4555-8555-555555455556', 'SMK-9', 'Smoke P9',
+   '55555555-5555-4555-8555-555555455555', 'Mint', 300, 1);
+
+do $$
+begin
+  begin
+    perform public.create_batch($json$
+      {
+        "batch_number": "SMOKE-MIX",
+        "items": [
+          {"product_id": "55555555-5555-4555-8555-555555555555", "quantity_received": 1, "supplier_price": 200, "selling_price": 350},
+          {"product_id": "55555555-5555-4555-8555-555555455556", "quantity_received": 1, "supplier_price": 70, "selling_price": 120}
+        ]
+      }
+    $json$::jsonb);
+    raise exception 'TEST FAIL: mixed-brand batch was accepted';
+  exception when sqlstate '22023' then null;
+  end;
+end;
+$$;
+
+-- Owners can edit a completed sale: it is voided and a corrected sale is booked.
+do $$
+declare
+  v_edit jsonb;
+begin
+  v_edit := public.edit_sale(
+    (select id from public.sales where idempotency_key = 'smoke-2'),
+    '{"source":"pos","items":[{"product_id":"66666666-6666-4666-8666-666666666666","quantity":2}],"payment":{"method":"cash","amount":120}}'::jsonb,
+    'edited in smoke test'
+  );
+
+  if (select status from public.sales where idempotency_key = 'smoke-2') <> 'voided' then
+    raise exception 'TEST FAIL: edited sale was not voided';
+  end if;
+
+  if (v_edit ->> 'total')::numeric <> 240 then
+    raise exception 'TEST FAIL: edited total is %', v_edit ->> 'total';
+  end if;
+end;
+$$;
+
 reset role;
 
 -- -------------------------------------------------------------- audit trail

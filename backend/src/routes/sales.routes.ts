@@ -2,6 +2,7 @@ import { Router } from "express";
 import {
   addPaymentSchema,
   createSaleSchema,
+  editSaleSchema,
   salesQuerySchema,
   updateSaleSchema,
   voidSaleSchema,
@@ -36,4 +37,12 @@ salesRouter.post(
   requireRole("owner", "manager"),
   validate(voidSaleSchema),
   controller.voidHandler,
+);
+
+salesRouter.patch(
+  "/:id/edit",
+  requireRole("owner", "manager"),
+  writeLimiter,
+  validate(editSaleSchema),
+  controller.edit,
 );

@@ -6,6 +6,7 @@ import { ApiError } from "../lib/errors";
 import {
   addPayment,
   createSale,
+  editSale,
   getSale,
   listSales,
   redactCost,
@@ -84,6 +85,18 @@ export const voidHandler: RequestHandler = async (req, res) => {
   const auth = authOf(req);
   const body = validated<{ reason: string }>(req, "body");
   res.json(await voidSale(auth.db, req.params.id as string, body.reason));
+};
+
+export const edit: RequestHandler = async (req, res) => {
+  const auth = authOf(req);
+  const body = validated<CreateSaleInput>(req, "body");
+  const result = await editSale(
+    auth.db,
+    req.params.id as string,
+    body,
+    (req.validated?.body as { reason?: string } | undefined)?.reason ?? "",
+  );
+  res.json(result);
 };
 
 export const update: RequestHandler = async (req, res) => {

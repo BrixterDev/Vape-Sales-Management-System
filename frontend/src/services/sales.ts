@@ -41,6 +41,9 @@ export const salesService = {
   create: (input: CreateSaleInput) =>
     api.post<CreateSaleResult>("/sales", input),
 
+  edit: (id: string, input: CreateSaleInput) =>
+    api.patch<{ sale_id: string }>(`/sales/${id}/edit`, input),
+
   update: (id: string, input: UpdateSaleInput) =>
     api.patch<{ sale_id: string }>(`/sales/${id}`, input),
 

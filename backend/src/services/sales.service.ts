@@ -76,8 +76,33 @@ export async function listSales(db: SupabaseClient, params: SalesListParams) {
 
   if (error) fail(error, "Unable to load sales");
 
+  const rows = (data ?? []) as Array<Record<string, unknown>>;
+
+  // Attach the sale lines for the current page so the sales screen can render
+  // flavor / quantity details. v_sale_items masks cost for cashiers.
+  const itemsBySale = new Map<string, Array<Record<string, unknown>>>();
+  if (rows.length > 0) {
+    const ids = rows.map((row) => row.id as string);
+    const { data: itemRows, error: itemError } = await db
+      .from("v_sale_items")
+      .select("*")
+      .in("sale_id", ids);
+
+    if (itemError) fail(itemError, "Unable to load sale items");
+
+    for (const item of itemRows ?? []) {
+      const key = item.sale_id as string;
+      const list = itemsBySale.get(key) ?? [];
+      list.push(item);
+      itemsBySale.set(key, list);
+    }
+  }
+
   return {
-    items: data ?? [],
+    items: rows.map((row) => ({
+      ...row,
+      items: itemsBySale.get(row.id as string) ?? [],
+    })),
     total: count ?? 0,
     page: params.page,
     pageSize: params.pageSize,
@@ -165,6 +190,21 @@ export async function voidSale(db: SupabaseClient, saleId: string, reason: strin
     p_reason: reason,
   });
   if (error) fail(error, "Unable to void the sale");
+  return data;
+}
+
+export async function editSale(
+  db: SupabaseClient,
+  saleId: string,
+  input: CreateSaleInput,
+  reason: string,
+) {
+  const { data, error } = await db.rpc("edit_sale", {
+    p_sale_id: saleId,
+    p_payload: input,
+    p_reason: reason,
+  });
+  if (error) fail(error, "Unable to edit the sale");
   return data;
 }
 

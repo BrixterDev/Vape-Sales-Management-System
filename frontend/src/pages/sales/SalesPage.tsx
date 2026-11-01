@@ -4,6 +4,7 @@ import {
   Ban,
   CalendarDays,
   Eye,
+  Pencil,
   Plus,
   Search,
   ShoppingBag,
@@ -11,7 +12,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { toast } from "sonner";
-import type { SaleWithBalance } from "@vape/shared";
+import type { CreateSaleInput, SaleWithBalance } from "@vape/shared";
 import { salesService } from "@/services/sales";
 import { productsService } from "@/services/products";
 import { customersService } from "@/services/parties";
@@ -68,6 +69,7 @@ export default function SalesPage() {
   const [detailId, setDetailId] = useState<string | null>(null);
   const [payFor, setPayFor] = useState<SaleWithBalance | null>(null);
   const [voidFor, setVoidFor] = useState<SaleWithBalance | null>(null);
+  const [editFor, setEditFor] = useState<SaleWithBalance | null>(null);
 
   const [manualOpen, setManualOpen] = useState(false);
   const [manualDate, setManualDate] = useState(isoDate(new Date()));
@@ -138,6 +140,18 @@ export default function SalesPage() {
       toast.success("Sale voided and stock restored");
       setVoidFor(null);
       setDetailId(null);
+      refresh();
+      void queryClient.invalidateQueries({ queryKey: ["inventory"] });
+    },
+    onError: (error) => toast.error(errorMessage(error)),
+  });
+
+  const editMutation = useMutation({
+    mutationFn: (input: { saleId: string; payload: CreateSaleInput }) =>
+      salesService.edit(input.saleId, input.payload),
+    onSuccess: () => {
+      toast.success("Sale updated");
+      setEditFor(null);
       refresh();
       void queryClient.invalidateQueries({ queryKey: ["inventory"] });
     },
@@ -281,69 +295,77 @@ export default function SalesPage() {
               <THead>
                 <TR>
                   <TH>Date</TH>
-                  <TH>Transaction</TH>
                   <TH>Customer</TH>
-                  <TH className="text-right">Items</TH>
-                  <TH className="text-right">Total</TH>
-                  <TH className="text-right">Paid</TH>
+                  <TH>Flavor</TH>
+                  <TH className="text-right">Quantity</TH>
                   <TH className="text-right">Balance</TH>
                   <TH>Payment</TH>
-                  <TH>Status</TH>
                   <TH />
                 </TR>
               </THead>
               <TBody>
-                {(listQuery.data?.items ?? []).map((sale) => (
-                  <TR key={sale.id}>
-                    <TD className="whitespace-nowrap text-xs text-muted">
-                      {formatDateTime(sale.sale_date)}
-                    </TD>
-                    <TD className="font-medium">{sale.transaction_number}</TD>
-                    <TD>{sale.customer_name || "Walk-in"}</TD>
-                    <TD className="tabular text-right">{formatNumber(sale.item_count)}</TD>
-                    <TD className="tabular text-right">{formatPHP(sale.total)}</TD>
-                    <TD className="tabular text-right text-accent">{formatPHP(sale.paid_amount)}</TD>
-                    <TD className="tabular text-right">
-                      <span className={Number(sale.balance) > 0 ? "text-danger" : "text-muted"}>
-                        {formatPHP(sale.balance)}
-                      </span>
-                    </TD>
-                    <TD>
-                      <Badge tone={paymentTone(sale.payment_status)}>
-                        {sale.payment_status}
-                      </Badge>
-                    </TD>
-                    <TD>
-                      {sale.status === "voided" ? (
-                        <Badge tone="danger">Voided</Badge>
-                      ) : (
-                        <Badge tone="neutral">Completed</Badge>
-                      )}
-                    </TD>
-                    <TD>
-                      <div className="flex justify-end gap-1">
-                        {Number(sale.balance) > 0 && sale.status === "completed" ? (
+                {(listQuery.data?.items ?? []).map((sale) => {
+                  const items = sale.items ?? [];
+                  const flavorLabel = items.length
+                    ? items
+                        .map(
+                          (item) =>
+                            item.quantity > 1 ? `${item.flavor} ×${item.quantity}` : item.flavor,
+                        )
+                        .join(" · ")
+                    : "—";
+                  const quantity = items.reduce((sum, item) => sum + item.quantity, 0);
+                  return (
+                    <TR key={sale.id}>
+                      <TD className="whitespace-nowrap text-xs text-muted">
+                        {formatDateTime(sale.sale_date)}
+                      </TD>
+                      <TD>{sale.customer_name || "Walk-in"}</TD>
+                      <TD>{flavorLabel}</TD>
+                      <TD className="tabular text-right">{formatNumber(quantity)}</TD>
+                      <TD className="tabular text-right">
+                        <span className={Number(sale.balance) > 0 ? "text-danger" : "text-muted"}>
+                          {formatPHP(sale.balance)}
+                        </span>
+                      </TD>
+                      <TD>
+                        <Badge tone={paymentTone(sale.payment_status)}>{sale.payment_status}</Badge>
+                      </TD>
+                      <TD>
+                        <div className="flex justify-end gap-1">
+                          {Number(sale.balance) > 0 && sale.status === "completed" ? (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              title="Record payment"
+                              onClick={() => setPayFor(sale)}
+                            >
+                              <Wallet className="h-4 w-4" />
+                            </Button>
+                          ) : null}
                           <Button
                             variant="ghost"
                             size="icon"
-                            title="Record payment"
-                            onClick={() => setPayFor(sale)}
+                            title="View details"
+                            onClick={() => setDetailId(sale.id)}
                           >
-                            <Wallet className="h-4 w-4" />
+                            <Eye className="h-4 w-4" />
                           </Button>
-                        ) : null}
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          title="View details"
-                          onClick={() => setDetailId(sale.id)}
-                        >
-                          <Eye className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </TD>
-                  </TR>
-                ))}
+                          {canVoid && sale.status === "completed" ? (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              title="Edit sale"
+                              onClick={() => setEditFor(sale)}
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                          ) : null}
+                        </div>
+                      </TD>
+                    </TR>
+                  );
+                })}
               </TBody>
             </Table>
             <Pagination
@@ -373,10 +395,16 @@ export default function SalesPage() {
         size="lg"
         footer={
           detailQuery.data && canVoid && detailQuery.data.status === "completed" ? (
-            <Button variant="danger" onClick={() => setVoidFor(detailQuery.data)}>
-              <Ban className="h-4 w-4" />
-              Void sale
-            </Button>
+            <>
+              <Button variant="secondary" onClick={() => setEditFor(detailQuery.data)}>
+                <Pencil className="h-4 w-4" />
+                Edit sale
+              </Button>
+              <Button variant="danger" onClick={() => setVoidFor(detailQuery.data)}>
+                <Ban className="h-4 w-4" />
+                Void sale
+              </Button>
+            </>
           ) : null
         }
       >
@@ -486,6 +514,18 @@ export default function SalesPage() {
         onSubmit={(reason) => voidMutation.mutate(reason)}
         pending={voidMutation.isPending}
       />
+
+      {editFor ? (
+        <EditDialog
+          key={editFor.id}
+          sale={editFor}
+          products={productsQuery.data?.items ?? []}
+          customers={customersQuery.data?.items ?? []}
+          onClose={() => setEditFor(null)}
+          onSubmit={(payload) => editMutation.mutate({ saleId: editFor.id, payload })}
+          pending={editMutation.isPending}
+        />
+      ) : null}
 
       {/* ---------------------------------------------------------- manual */}
       <Dialog
@@ -809,3 +849,206 @@ function VoidDialog({
     </Dialog>
   );
 }
+
+function EditDialog({
+  sale,
+  products,
+  customers,
+  onClose,
+  onSubmit,
+  pending,
+}: {
+  sale: SaleWithBalance;
+  products: Array<{ id: string; name: string; flavor: string; stock_qty?: number }>;
+  customers: Array<{ id: string; name: string }>;
+  onClose: () => void;
+  onSubmit: (values: CreateSaleInput) => void;
+  pending: boolean;
+}) {
+  const [date, setDate] = useState(sale.sale_date?.slice(0, 10) ?? isoDate(new Date()));
+  const [customerId, setCustomerId] = useState(sale.customer_id ?? "");
+  const [customerName, setCustomerName] = useState(sale.customer_name ?? "");
+  const [notes, setNotes] = useState(sale.notes ?? "");
+  const [discount, setDiscount] = useState(String(sale.discount ?? 0));
+  const [lines, setLines] = useState<Array<{ product_id: string; quantity: string }>>(
+    (sale.items ?? []).map((item) => ({
+      product_id: item.product_id,
+      quantity: String(item.quantity),
+    })),
+  );
+  const [method, setMethod] = useState<string>(sale.payments?.[0]?.method ?? "cash");
+  const [amount, setAmount] = useState(String(sale.paid_amount ?? 0));
+  const [reference, setReference] = useState(sale.payments?.[0]?.reference_no ?? "");
+
+  const submit = () => {
+    const items = lines
+      .filter((line) => line.product_id)
+      .map((line) => ({ product_id: line.product_id, quantity: Number(line.quantity) }))
+      .filter((line) => line.quantity > 0);
+
+    if (items.length === 0) {
+      toast.error("Add at least one item");
+      return;
+    }
+
+    onSubmit({
+      source: sale.source,
+      sale_date: new Date(`${date}T12:00:00`).toISOString(),
+      customer_id: customerId || null,
+      customer_name: customerName.trim() || null,
+      notes: notes.trim() || null,
+      discount: Number(discount) || 0,
+      items,
+      payment: {
+        method: method as "cash" | "gcash" | "bank_transfer" | "other",
+        amount: Number(amount) || 0,
+        reference_no: reference.trim() || null,
+      },
+    });
+  };
+
+  return (
+    <Dialog
+      open={Boolean(sale)}
+      onClose={onClose}
+      title={`Edit sale ${sale.transaction_number}`}
+      description="The original transaction is voided and a corrected sale is booked."
+      size="xl"
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button onClick={submit} disabled={pending}>
+            {pending ? "Saving…" : "Save changes"}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Sale date">
+            <Input type="date" value={date} onChange={(event) => setDate(event.target.value)} />
+          </Field>
+          <Field label="Customer">
+            <Select value={customerId} onChange={(event) => setCustomerId(event.target.value)}>
+              <option value="">Walk-in / typed name</option>
+              {customers.map((customer) => (
+                <option key={customer.id} value={customer.id}>
+                  {customer.name}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Customer name (walk-in)">
+            <Input
+              value={customerName}
+              onChange={(event) => setCustomerName(event.target.value)}
+              disabled={Boolean(customerId)}
+              placeholder="Optional"
+            />
+          </Field>
+          <Field label="Discount (PHP)">
+            <Input
+              type="number"
+              min="0"
+              step="0.01"
+              value={discount}
+              onChange={(event) => setDiscount(event.target.value)}
+            />
+          </Field>
+          <Field label="Notes" className="sm:col-span-2">
+            <Textarea
+              value={notes}
+              onChange={(event) => setNotes(event.target.value)}
+              placeholder="Optional"
+            />
+          </Field>
+        </div>
+
+        <div className="mt-4 space-y-2">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-medium uppercase tracking-wider text-muted">Items</p>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setLines((current) => [...current, { product_id: "", quantity: "1" }])}
+            >
+              <Plus className="h-4 w-4" />
+              Add item
+            </Button>
+          </div>
+
+          {lines.map((line, index) => (
+            <div
+              key={index}
+              className="grid gap-2 rounded-lg border border-line bg-canvas/40 p-3 sm:grid-cols-[1fr_90px_36px]"
+            >
+              <Select
+                value={line.product_id}
+                onChange={(event) =>
+                  setLines((current) =>
+                    current.map((entry, entryIndex) =>
+                      entryIndex === index ? { ...entry, product_id: event.target.value } : entry,
+                    ),
+                  )
+                }
+              >
+                <option value="">Select product</option>
+                {products.map((entry) => (
+                  <option key={entry.id} value={entry.id}>
+                    {entry.name} · {entry.flavor} ({entry.stock_qty} left)
+                  </option>
+                ))}
+              </Select>
+              <Input
+                type="number"
+                min="1"
+                value={line.quantity}
+                onChange={(event) =>
+                  setLines((current) =>
+                    current.map((entry, entryIndex) =>
+                      entryIndex === index ? { ...entry, quantity: event.target.value } : entry,
+                    ),
+                  )
+                }
+              />
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() =>
+                  setLines((current) => (current.length === 1 ? current : current.filter((_, i) => i !== index)))
+                }
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-4 grid gap-4 sm:grid-cols-3">
+          <Field label="Payment method">
+            <Select value={method} onChange={(event) => setMethod(event.target.value)}>
+              <option value="cash">Cash</option>
+              <option value="gcash">GCash</option>
+              <option value="bank_transfer">Bank Transfer</option>
+              <option value="other">Other</option>
+            </Select>
+          </Field>
+          <Field label="Amount paid">
+            <Input
+              type="number"
+              min="0"
+              step="0.01"
+              value={amount}
+              onChange={(event) => setAmount(event.target.value)}
+            />
+          </Field>
+          <Field label="Reference no.">
+            <Input value={reference} onChange={(event) => setReference(event.target.value)} />
+          </Field>
+        </div>
+      </div>
+      </Dialog>
+    );
+  }
