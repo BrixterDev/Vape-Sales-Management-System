@@ -78,7 +78,7 @@ export async function listCustomers(
 
   const term = sanitizeSearch(params.search);
   if (term) {
-    query = query.or(`name.ilike.%${term}%,phone.ilike.%${term}%,email.ilike.%${term}%`);
+    query = query.ilike("name", `%${term}%`);
   }
 
   const [from, to] = pageRange(params.page, params.pageSize);

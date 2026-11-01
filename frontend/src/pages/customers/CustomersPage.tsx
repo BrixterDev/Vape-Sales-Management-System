@@ -12,7 +12,7 @@ import { PageHeader } from "@/components/ui/layout-bits";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog } from "@/components/ui/dialog";
-import { Field, Input, Textarea } from "@/components/ui/form";
+import { Field, Input } from "@/components/ui/form";
 import { EmptyState, Pagination, Skeleton } from "@/components/ui/helpers";
 import {
   Table,
@@ -27,13 +27,9 @@ import {
 interface CustomerForm {
   id?: string;
   name: string;
-  phone: string;
-  email: string;
-  address: string;
-  notes: string;
 }
 
-const emptyForm: CustomerForm = { name: "", phone: "", email: "", address: "", notes: "" };
+const emptyForm: CustomerForm = { name: "" };
 
 export default function CustomersPage() {
   const { profile } = useAuth();
@@ -61,13 +57,7 @@ export default function CustomersPage() {
 
   const saveMutation = useMutation({
     mutationFn: () => {
-      const payload = {
-        name: form.name.trim(),
-        phone: form.phone.trim() || null,
-        email: form.email.trim() || null,
-        address: form.address.trim() || null,
-        notes: form.notes.trim() || null,
-      };
+      const payload = { name: form.name.trim() };
       return form.id ? customersService.update(form.id, payload) : customersService.create(payload);
     },
     onSuccess: () => {
@@ -81,14 +71,7 @@ export default function CustomersPage() {
   });
 
   const openEdit = (customer: CustomerBalance) => {
-    setForm({
-      id: customer.id,
-      name: customer.name,
-      phone: customer.phone ?? "",
-      email: customer.email ?? "",
-      address: customer.address ?? "",
-      notes: customer.notes ?? "",
-    });
+    setForm({ id: customer.id, name: customer.name });
     setFormOpen(true);
   };
 
@@ -96,7 +79,7 @@ export default function CustomersPage() {
     <div className="space-y-5">
       <PageHeader
         title="Customers"
-        description="Purchase history and outstanding balances per customer."
+        description="Customer names and their order history."
         actions={
           canManage ? (
             <Button
@@ -117,7 +100,7 @@ export default function CustomersPage() {
         <Input
           value={search}
           onChange={(event) => setSearch(event.target.value)}
-          placeholder="Search name, phone or email"
+          placeholder="Search customer name"
           className="pl-9"
         />
       </div>
@@ -141,10 +124,7 @@ export default function CustomersPage() {
               <THead>
                 <TR>
                   <TH>Customer</TH>
-                  <TH>Contact</TH>
-                  <TH className="text-right">Transactions</TH>
-                  <TH className="text-right">Total Purchases</TH>
-                  <TH className="text-right">Outstanding</TH>
+                  <TH className="text-right">Orders</TH>
                   <TH />
                 </TR>
               </THead>
@@ -155,17 +135,8 @@ export default function CustomersPage() {
                       <p className="font-medium">{customer.name}</p>
                       {!customer.is_active ? <Badge>Inactive</Badge> : null}
                     </TD>
-                    <TD className="text-xs text-muted">
-                      {[customer.phone, customer.email].filter(Boolean).join(" \u00b7 ") || "\u2014"}
-                    </TD>
-                    <TD className="tabular text-right">{formatNumber(customer.transaction_count)}</TD>
-                    <TD className="tabular text-right">{formatPHP(customer.total_purchases)}</TD>
                     <TD className="tabular text-right">
-                      <span
-                        className={Number(customer.outstanding) > 0 ? "text-danger" : "text-muted"}
-                      >
-                        {formatPHP(customer.outstanding)}
-                      </span>
+                      {formatNumber(customer.transaction_count)}
                     </TD>
                     <TD>
                       <div className="flex justify-end gap-1">
@@ -211,38 +182,12 @@ export default function CustomersPage() {
           </>
         }
       >
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Name *" className="sm:col-span-2">
+        <div className="grid gap-4">
+          <Field label="Name *">
             <Input
               value={form.name}
               onChange={(event) => setForm({ ...form, name: event.target.value })}
               placeholder="Juan Dela Cruz"
-            />
-          </Field>
-          <Field label="Phone">
-            <Input
-              value={form.phone}
-              onChange={(event) => setForm({ ...form, phone: event.target.value })}
-              placeholder="0917 000 0000"
-            />
-          </Field>
-          <Field label="Email">
-            <Input
-              type="email"
-              value={form.email}
-              onChange={(event) => setForm({ ...form, email: event.target.value })}
-            />
-          </Field>
-          <Field label="Address" className="sm:col-span-2">
-            <Input
-              value={form.address}
-              onChange={(event) => setForm({ ...form, address: event.target.value })}
-            />
-          </Field>
-          <Field label="Notes" className="sm:col-span-2">
-            <Textarea
-              value={form.notes}
-              onChange={(event) => setForm({ ...form, notes: event.target.value })}
             />
           </Field>
         </div>

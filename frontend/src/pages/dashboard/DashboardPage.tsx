@@ -20,10 +20,11 @@ import {
   Wallet,
 } from "lucide-react";
 import { reportsService } from "@/services/reports";
+import { salesService } from "@/services/sales";
 import { StatCard } from "@/components/ui/layout-bits";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { EmptyState, Skeleton } from "@/components/ui/helpers";
+import { EmptyState, Pagination, Skeleton } from "@/components/ui/helpers";
 import {
   Table,
   TBody,
@@ -34,11 +35,12 @@ import {
   TableWrap,
 } from "@/components/ui/table";
 import { RANGE_OPTIONS, rangeFor, type RangeKey } from "@/lib/ranges";
-import { cn, formatDate, formatNumber, formatPHP } from "@/lib/utils";
+import { cn, formatDate, formatDateTime, formatNumber, formatPHP } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 
 export default function DashboardPage() {
   const [range, setRange] = useState<RangeKey>("30d");
+  const [salesPage, setSalesPage] = useState(1);
   const { profile } = useAuth();
   const bounds = useMemo(() => rangeFor(range), [range]);
 
@@ -46,6 +48,13 @@ export default function DashboardPage() {
     queryKey: ["dashboard", bounds.from, bounds.to],
     queryFn: () => reportsService.dashboard(bounds),
   });
+
+  const { data: completedSalesData, isLoading: completedSalesLoading } = useQuery({
+    queryKey: ["dashboard-completed-sales", salesPage],
+    queryFn: () => salesService.list({ page: salesPage, pageSize: 10, status: "completed" }),
+  });
+
+  const completedSales = completedSalesData?.items ?? [];
 
   const metrics = data?.metrics;
   const showProfit = profile?.role !== "cashier";
@@ -302,6 +311,76 @@ export default function DashboardPage() {
               </TBody>
             </Table>
           </TableWrap>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div>
+            <CardTitle>Completed sales</CardTitle>
+            <p className="mt-1 text-xs text-muted">Every completed transaction in the store</p>
+          </div>
+        </CardHeader>
+        <CardContent className="p-0">
+          <TableWrap className="rounded-none border-0 border-t border-line">
+            <Table>
+              <THead>
+                <TR>
+                  <TH>Date</TH>
+                  <TH>Transaction</TH>
+                  <TH>Customer</TH>
+                  <TH className="text-right">Items</TH>
+                  <TH className="text-right">Total</TH>
+                  <TH className="text-right">Paid</TH>
+                  <TH className="text-right">Balance</TH>
+                </TR>
+              </THead>
+              <TBody>
+                {completedSalesLoading ? (
+                  <TR>
+                    <TD colSpan={7}>
+                      <Skeleton className="h-11" />
+                    </TD>
+                  </TR>
+                ) : completedSales.length === 0 ? (
+                  <TR>
+                    <TD colSpan={7}>
+                      <EmptyState
+                        title="No completed sales yet"
+                        description="Completed transactions will appear here."
+                      />
+                    </TD>
+                  </TR>
+                ) : (
+                  completedSales.map((sale) => (
+                    <TR key={sale.id}>
+                      <TD className="whitespace-nowrap text-xs text-muted">
+                        {formatDateTime(sale.sale_date)}
+                      </TD>
+                      <TD className="font-medium">{sale.transaction_number}</TD>
+                      <TD>{sale.customer_name || "Walk-in"}</TD>
+                      <TD className="tabular text-right">{formatNumber(sale.item_count)}</TD>
+                      <TD className="tabular text-right">{formatPHP(sale.total)}</TD>
+                      <TD className="tabular text-right text-accent">{formatPHP(sale.paid_amount)}</TD>
+                      <TD className="tabular text-right">
+                        <span className={Number(sale.balance) > 0 ? "text-danger" : "text-muted"}>
+                          {formatPHP(sale.balance)}
+                        </span>
+                      </TD>
+                    </TR>
+                  ))
+                )}
+              </TBody>
+            </Table>
+          </TableWrap>
+          <div className="flex justify-end px-4 py-3">
+            <Pagination
+              page={salesPage}
+              pageSize={10}
+              total={completedSalesData?.total ?? 0}
+              onPageChange={setSalesPage}
+            />
+          </div>
         </CardContent>
       </Card>
     </div>

@@ -60,7 +60,7 @@ export default function SalesPage() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [paymentStatus, setPaymentStatus] = useState("");
-  const [status, setStatus] = useState("");
+  const [status, setStatus] = useState("completed");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const debounced = useDebounced(search);

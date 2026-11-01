@@ -123,10 +123,6 @@ export const adjustStockSchema = z.object({
 
 export const customerSchema = z.object({
   name: z.string().trim().min(1).max(160),
-  phone: optionalText,
-  email: z.union([z.string().email(), z.literal(""), z.null()]).optional(),
-  address: optionalText,
-  notes: optionalText,
   is_active: z.boolean().optional(),
 });
 

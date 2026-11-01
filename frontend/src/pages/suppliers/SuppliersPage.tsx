@@ -26,18 +26,14 @@ import {
 interface SupplierForm {
   id?: string;
   name: string;
-  contact_person: string;
   phone: string;
-  email: string;
   address: string;
   notes: string;
 }
 
 const emptyForm: SupplierForm = {
   name: "",
-  contact_person: "",
   phone: "",
-  email: "",
   address: "",
   notes: "",
 };
@@ -67,9 +63,7 @@ export default function SuppliersPage() {
     mutationFn: () => {
       const payload = {
         name: form.name.trim(),
-        contact_person: form.contact_person.trim() || null,
         phone: form.phone.trim() || null,
-        email: form.email.trim() || null,
         address: form.address.trim() || null,
         notes: form.notes.trim() || null,
       };
@@ -108,7 +102,7 @@ export default function SuppliersPage() {
         <Input
           value={search}
           onChange={(event) => setSearch(event.target.value)}
-          placeholder="Search supplier or contact"
+          placeholder="Search supplier"
           className="pl-9"
         />
       </div>
@@ -132,7 +126,6 @@ export default function SuppliersPage() {
               <THead>
                 <TR>
                   <TH>Supplier</TH>
-                  <TH>Contact</TH>
                   <TH>Phone</TH>
                   <TH>Status</TH>
                   <TH />
@@ -142,7 +135,6 @@ export default function SuppliersPage() {
                 {(listQuery.data?.items ?? []).map((supplier) => (
                   <TR key={supplier.id}>
                     <TD className="font-medium">{supplier.name}</TD>
-                    <TD className="text-muted">{supplier.contact_person ?? "\u2014"}</TD>
                     <TD className="text-muted">{supplier.phone ?? "\u2014"}</TD>
                     <TD>
                       {supplier.is_active ? (
@@ -163,9 +155,7 @@ export default function SuppliersPage() {
                             setForm({
                               id: supplier.id,
                               name: supplier.name,
-                              contact_person: supplier.contact_person ?? "",
                               phone: supplier.phone ?? "",
-                              email: supplier.email ?? "",
                               address: supplier.address ?? "",
                               notes: supplier.notes ?? "",
                             });
@@ -216,23 +206,10 @@ export default function SuppliersPage() {
               placeholder="Metro Vape Distributors"
             />
           </Field>
-          <Field label="Contact person">
-            <Input
-              value={form.contact_person}
-              onChange={(event) => setForm({ ...form, contact_person: event.target.value })}
-            />
-          </Field>
           <Field label="Phone">
             <Input
               value={form.phone}
               onChange={(event) => setForm({ ...form, phone: event.target.value })}
-            />
-          </Field>
-          <Field label="Email">
-            <Input
-              type="email"
-              value={form.email}
-              onChange={(event) => setForm({ ...form, email: event.target.value })}
             />
           </Field>
           <Field label="Address">
@@ -280,7 +257,7 @@ export default function SuppliersPage() {
                   <div>
                     <p className="text-sm font-medium">{row.batch_number}</p>
                     <p className="text-[11px] text-muted">
-                      {formatDate(row.date_received)} \u00b7 {formatNumber(row.remaining_units)} /{" "}
+                      {formatDate(row.date_received)} · {formatNumber(row.remaining_units)} /{" "}
                       {formatNumber(row.total_units)} units left
                     </p>
                   </div>

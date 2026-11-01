@@ -11,7 +11,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { toast } from "sonner";
-import type { BatchSummary } from "@vape/shared";
+import type { BatchSummary, Product } from "@vape/shared";
 import { batchesService } from "@/services/batches";
 import { productsService } from "@/services/products";
 import { suppliersService } from "@/services/parties";
@@ -62,6 +62,14 @@ export default function BatchesPage() {
   const [dateReceived, setDateReceived] = useState(isoDate(new Date()));
   const [notes, setNotes] = useState("");
   const [items, setItems] = useState<ItemRow[]>([{ ...blankItem }]);
+  const [newProduct, setNewProduct] = useState({
+    name: "",
+    brand: "",
+    flavor: "",
+    sku: "",
+    selling_price: "0",
+  });
+  const [creatingProduct, setCreatingProduct] = useState(false);
 
   const listQuery = useQuery({
     queryKey: ["batches", page, debounced],
@@ -72,6 +80,24 @@ export default function BatchesPage() {
     queryKey: ["product-options"],
     queryFn: () => productsService.list({ page: 1, pageSize: 100 }),
   });
+
+  const brandsQuery = useQuery({
+    queryKey: ["brands"],
+    queryFn: () => productsService.brands(),
+  });
+
+  const [extraProducts, setExtraProducts] = useState<Product[]>([]);
+
+  const productOptions = useMemo(() => {
+    const list = productsQuery.data?.items ?? [];
+    const seen = new Set(list.map((p) => p.id));
+    const merged = [...list, ...extraProducts.filter((p) => !seen.has(p.id))];
+    return merged;
+  }, [productsQuery.data, extraProducts]);
+
+  const brandNames = useMemo(() => (brandsQuery.data ?? []).map((brand) => brand.name), [
+    brandsQuery.data,
+  ]);
 
   const suppliersQuery = useQuery({
     queryKey: ["supplier-options"],
@@ -126,6 +152,48 @@ export default function BatchesPage() {
       void queryClient.invalidateQueries({ queryKey: ["inventory"] });
       void queryClient.invalidateQueries({ queryKey: ["inventory-summary"] });
       void queryClient.invalidateQueries({ queryKey: ["product-options"] });
+    },
+    onError: (error) => toast.error(errorMessage(error)),
+  });
+
+  const createProductMutation = useMutation({
+    mutationFn: async () => {
+      const sellingPrice = Number(newProduct.selling_price || 0);
+      let brandId: string | null = null;
+      const brandName = newProduct.brand.trim();
+      if (brandName) {
+        const existing = brandsQuery.data?.find(
+          (brand) => brand.name.toLowerCase() === brandName.toLowerCase(),
+        );
+        brandId = existing?.id ?? (await productsService.createBrand(brandName)).id;
+      }
+
+      const product = await productsService.create({
+        sku: newProduct.sku.trim(),
+        name: newProduct.name.trim(),
+        brand_id: brandId,
+        flavor: newProduct.flavor.trim(),
+        selling_price: sellingPrice,
+        low_stock_threshold: 5,
+      });
+
+      setExtraProducts((rows) => [...rows, product]);
+      setItems((rows) => [
+        ...rows,
+        {
+          product_id: product.id,
+          quantity_received: "1",
+          supplier_price: "",
+          selling_price: String(product.selling_price),
+        },
+      ]);
+      setNewProduct({ name: "", brand: "", flavor: "", sku: "", selling_price: "0" });
+      setCreatingProduct(false);
+      toast.success("Flavor created and added to batch");
+      void queryClient.invalidateQueries({ queryKey: ["product-options"] });
+      void queryClient.invalidateQueries({ queryKey: ["inventory"] });
+      void queryClient.invalidateQueries({ queryKey: ["inventory-summary"] });
+      return product;
     },
     onError: (error) => toast.error(errorMessage(error)),
   });
@@ -283,6 +351,95 @@ export default function BatchesPage() {
         </div>
 
         <div className="mt-5 space-y-2">
+          <div className="rounded-lg border border-line bg-canvas/40 p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs font-medium uppercase tracking-wider text-muted">
+                New flavor / product
+              </p>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setCreatingProduct(true)}
+                disabled={createMutation.isPending}
+              >
+                <Plus className="h-4 w-4" />
+                Create product
+              </Button>
+            </div>
+
+            {creatingProduct ? (
+              <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                <Field label="Flavor *">
+                  <Input
+                    value={newProduct.flavor}
+                    onChange={(event) => setNewProduct({ ...newProduct, flavor: event.target.value })}
+                    placeholder="Blue Razz"
+                  />
+                </Field>
+                <Field label="Product name *">
+                  <Input
+                    value={newProduct.name}
+                    onChange={(event) => setNewProduct({ ...newProduct, name: event.target.value })}
+                    placeholder="Vape X Juice Blue Razz"
+                  />
+                </Field>
+                <Field label="Brand">
+                  <Input
+                    list="batch-brand-options"
+                    value={newProduct.brand}
+                    onChange={(event) => setNewProduct({ ...newProduct, brand: event.target.value })}
+                    placeholder="Optional"
+                  />
+                  <datalist id="batch-brand-options">
+                    {brandNames.map((name) => (
+                      <option key={name} value={name} />
+                    ))}
+                  </datalist>
+                </Field>
+                <Field label="SKU *">
+                  <Input
+                    value={newProduct.sku}
+                    onChange={(event) => setNewProduct({ ...newProduct, sku: event.target.value })}
+                    placeholder="JUICE-001"
+                  />
+                </Field>
+                <Field label="Selling price (PHP)">
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={newProduct.selling_price}
+                    onChange={(event) =>
+                      setNewProduct({ ...newProduct, selling_price: event.target.value })
+                    }
+                  />
+                </Field>
+                <div className="flex items-end gap-2">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setCreatingProduct(false)}
+                    disabled={createProductMutation.isPending}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => createProductMutation.mutate()}
+                    disabled={
+                      createProductMutation.isPending ||
+                      !newProduct.name.trim() ||
+                      !newProduct.flavor.trim() ||
+                      !newProduct.sku.trim()
+                    }
+                  >
+                    {createProductMutation.isPending ? "Creating\u2026" : "Create & add to batch"}
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+          </div>
+
           <div className="flex items-center justify-between">
             <p className="text-xs font-medium uppercase tracking-wider text-muted">Batch items</p>
             <Button
@@ -304,9 +461,7 @@ export default function BatchesPage() {
                 value={item.product_id}
                 onChange={(event) => {
                   const productId = event.target.value;
-                  const product = productsQuery.data?.items.find(
-                    (entry) => entry.id === productId,
-                  );
+                  const product = productOptions.find((entry) => entry.id === productId);
                   updateItem(index, {
                     product_id: productId,
                     selling_price: product ? String(product.selling_price) : item.selling_price,
@@ -314,9 +469,9 @@ export default function BatchesPage() {
                 }}
               >
                 <option value="">Select product</option>
-                {(productsQuery.data?.items ?? []).map((product) => (
+                {productOptions.map((product) => (
                   <option key={product.id} value={product.id}>
-                    {product.name} \u00b7 {product.flavor}
+                    {product.name} · {product.flavor}
                   </option>
                 ))}
               </Select>

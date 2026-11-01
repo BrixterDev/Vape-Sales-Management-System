@@ -428,7 +428,7 @@ export default function PosPage() {
               {receipt.items.map((item) => (
                 <div key={`${item.product_id}-${item.flavor}`} className="flex justify-between gap-2">
                   <span className="truncate">
-                    {item.quantity} \u00d7 {item.product_name}
+                    {item.quantity} × {item.product_name}
                   </span>
                   <span className="tabular">{formatPHP(item.line_total)}</span>
                 </div>
