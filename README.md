@@ -148,6 +148,19 @@ npm run build        # shared → backend → frontend
 npm run db:push      # supabase db push
 ```
 
+### Database smoke tests
+
+`supabase/tests/smoke.sql` exercises FIFO checkout, idempotent retries, oversell and
+overpayment rejection, payment ownership, void restocking, cost masking for cashiers,
+batch-price immutability and the audit trail. It runs inside a transaction and rolls
+back, so it is safe against the live database:
+
+```bash
+npx supabase db query --linked -f supabase/tests/smoke.sql
+```
+
+An empty result means every assertion passed; any failure raises an exception.
+
 ---
 
 ## Deployment

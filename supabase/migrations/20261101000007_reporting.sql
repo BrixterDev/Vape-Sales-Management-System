@@ -257,7 +257,7 @@ as $$
    where p.role in ('owner', 'manager', 'cashier')
      and public.current_user_role() in ('owner', 'manager')
    group by p.id, p.full_name
-   order by gross_sales desc;
+   order by 4 desc;
 $$;
 
 /* --------------------------------------------------------------- privileges */
