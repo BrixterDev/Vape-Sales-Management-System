@@ -47,7 +47,11 @@ as $$
          p.flavor,
          r.quantity_sold,
          r.revenue,
-         r.gross_profit
+         -- Cashiers must not see profit derived from supplier cost.
+         case
+           when public.current_user_role() = 'cashier' then 0::numeric(14, 2)
+           else r.gross_profit
+         end
     from sales_in_range r
     join public.products p on p.id = r.product_id
     left join public.brands b on b.id = p.brand_id
@@ -109,7 +113,10 @@ begin
        group by 1
     )
     select b.period, b.transaction_count, b.gross_sales, b.collected,
-           coalesce(pr.gross_profit, 0)::numeric(14, 2) as gross_profit
+           case
+             when public.current_user_role() = 'cashier' then 0::numeric(14, 2)
+             else coalesce(pr.gross_profit, 0)::numeric(14, 2)
+           end as gross_profit
       from buckets b
       left join profit pr on pr.period = b.period
      order by b.period
@@ -155,10 +162,17 @@ begin
        where status = 'completed'
     ),
     'gross_profit', (
-      select coalesce(sum(si.line_total - (si.quantity * si.unit_cost)), 0)
-        from public.sale_items si
-        join public.sales s on s.id = si.sale_id
-       where s.status = 'completed' and s.sale_date >= p_from and s.sale_date < p_to
+      case
+        when public.current_user_role() = 'cashier' then 0::numeric(14, 2)
+        else (
+          select coalesce(sum(si.line_total - (si.quantity * si.unit_cost)), 0)
+            from public.sale_items si
+            join public.sales s on s.id = si.sale_id
+           where s.status = 'completed'
+             and s.sale_date >= p_from
+             and s.sale_date < p_to
+        )
+      end
     ),
     'transaction_count', (
       select count(*) from public.sales
@@ -205,6 +219,7 @@ as $$
     left join public.profiles p on p.id = s.cashier_id
    where s.status = 'completed'
      and s.total > s.paid_amount
+     and public.current_user_role() in ('owner', 'manager')
    order by s.sale_date asc;
 $$;
 
@@ -240,6 +255,7 @@ as $$
      and s.sale_date >= p_from
      and s.sale_date < p_to
    where p.role in ('owner', 'manager', 'cashier')
+     and public.current_user_role() in ('owner', 'manager')
    group by p.id, p.full_name
    order by gross_sales desc;
 $$;

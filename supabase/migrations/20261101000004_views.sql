@@ -1,11 +1,19 @@
 -- ============================================================================
 -- 0004 — Reporting views
--- All views run with security_invoker so the caller's RLS still applies.
+--
+-- Cost visibility:
+--   v_product_stock is a definer view exposing only non-sensitive stock data
+--   (quantities, selling price, retail value). Cashiers need it for the POS.
+--
+--   v_product_stock_costs is an invoker view that joins batch_items, so RLS
+--   hides supplier prices from cashiers. Managers/owners get real costs.
+--
+--   v_inventory_value is also invoker, therefore manager/owner only.
+--   v_inventory_summary_public exposes the aggregate cashiers need, with no
+--   cost columns.
 -- ============================================================================
 
-create or replace view public.v_product_stock
-with (security_invoker = true)
-as
+create or replace view public.v_product_stock as
 select
   p.id,
   p.sku,
@@ -22,7 +30,6 @@ select
   p.created_at,
   p.updated_at,
   coalesce(sum(bi.remaining_quantity), 0)::integer as stock_qty,
-  coalesce(sum(bi.remaining_quantity * bi.supplier_price), 0)::numeric(14, 2) as stock_cost,
   coalesce(sum(bi.remaining_quantity * bi.selling_price), 0)::numeric(14, 2) as retail_value,
   (
     coalesce(sum(bi.remaining_quantity), 0) <= p.low_stock_threshold
@@ -34,6 +41,20 @@ left join public.batch_items bi
   on bi.product_id = p.id
  and bi.remaining_quantity > 0
 group by p.id, b.name;
+
+create or replace view public.v_product_stock_costs
+with (security_invoker = true)
+as
+select
+  p.id as product_id,
+  coalesce(sum(bi.remaining_quantity), 0)::integer as stock_qty,
+  coalesce(sum(bi.remaining_quantity * bi.supplier_price), 0)::numeric(14, 2) as stock_cost,
+  coalesce(sum(bi.remaining_quantity * bi.selling_price), 0)::numeric(14, 2) as retail_value
+from public.products p
+left join public.batch_items bi
+  on bi.product_id = p.id
+ and bi.remaining_quantity > 0
+group by p.id;
 
 create or replace view public.v_batch_summary
 with (security_invoker = true)
@@ -102,6 +123,45 @@ select
   coalesce(sum(stock_qty), 0)::integer as total_units,
   coalesce(sum(stock_cost), 0)::numeric(14, 2) as total_cost_value,
   coalesce(sum(retail_value), 0)::numeric(14, 2) as total_retail_value,
+  count(*) filter (
+    where stock_qty <= p.low_stock_threshold and p.is_archived = false
+  )::integer as low_stock_count,
+  count(*) filter (where p.is_archived = false)::integer as active_products
+from public.v_product_stock_costs c
+join public.products p on p.id = c.product_id;
+
+create or replace view public.v_inventory_summary_public as
+select
+  coalesce(sum(stock_qty), 0)::integer as total_units,
   count(*) filter (where is_low_stock)::integer as low_stock_count,
   count(*) filter (where is_archived = false)::integer as active_products
 from public.v_product_stock;
+
+-- ============================================================================
+-- Privileges
+--
+-- v_product_stock and v_inventory_summary_public run with definer rights (they
+-- aggregate batch_items for stock counts), so they bypass RLS. Anonymous
+-- visitors must never read them. Every other view is invoker-secured, but we
+-- still grant explicitly instead of relying on Supabase default privileges.
+-- ============================================================================
+
+revoke all on
+  public.v_product_stock,
+  public.v_product_stock_costs,
+  public.v_batch_summary,
+  public.v_sale_balances,
+  public.v_customer_balances,
+  public.v_inventory_value,
+  public.v_inventory_summary_public
+from anon;
+
+grant select on
+  public.v_product_stock,
+  public.v_product_stock_costs,
+  public.v_batch_summary,
+  public.v_sale_balances,
+  public.v_customer_balances,
+  public.v_inventory_value,
+  public.v_inventory_summary_public
+to authenticated;

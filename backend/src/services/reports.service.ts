@@ -108,6 +108,32 @@ export async function inventoryReport(db: SupabaseClient) {
 
   if (error) fail(error, "Unable to build the inventory report");
 
+  const rows = (data ?? []) as Array<Record<string, unknown>>;
+
+  // Cost lives behind batch_items RLS, so merge it from the invoker view.
+  if (rows.length > 0) {
+    const { data: costs, error: costError } = await db
+      .from("v_product_stock_costs")
+      .select("product_id, stock_cost")
+      .in(
+        "product_id",
+        rows.map((row) => row.id as string),
+      );
+
+    if (costError) fail(costError, "Unable to load stock costs");
+
+    const byProduct = new Map(
+      (costs ?? []).map((row) => [
+        row.product_id as string,
+        Number(row.stock_cost),
+      ]),
+    );
+
+    for (const row of rows) {
+      row.stock_cost = byProduct.get(row.id as string) ?? 0;
+    }
+  }
+
   const { data: summary, error: summaryError } = await db
     .from("v_inventory_value")
     .select("*")
@@ -115,7 +141,7 @@ export async function inventoryReport(db: SupabaseClient) {
 
   if (summaryError) fail(summaryError, "Unable to summarise inventory");
 
-  return { summary, items: data ?? [] };
+  return { summary, items: rows };
 }
 
 export async function batchReport(

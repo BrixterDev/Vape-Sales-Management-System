@@ -209,7 +209,11 @@ export default function InventoryPage() {
         />
         <StatCard
           label="Inventory Cost"
-          value={formatPHP(summary?.total_cost_value)}
+          value={
+            summary?.total_cost_value == null
+              ? "\u2014"
+              : formatPHP(summary.total_cost_value)
+          }
           icon={<Wallet className="h-4 w-4" />}
         />
         <StatCard
@@ -313,7 +317,9 @@ export default function InventoryPage() {
                         {formatNumber(product.stock_qty)}
                       </span>
                     </TD>
-                    <TD className="tabular text-right text-muted">{formatPHP(product.stock_cost)}</TD>
+                    <TD className="tabular text-right text-muted">
+                      {product.stock_cost == null ? "\u2014" : formatPHP(product.stock_cost)}
+                    </TD>
                     <TD>
                       {product.is_archived ? (
                         <Badge>Archived</Badge>

@@ -35,6 +35,12 @@ begin
     raise exception 'Cannot record a payment on a voided sale' using errcode = '22023';
   end if;
 
+  -- Cashiers may only settle their own transactions.
+  if v_role = 'cashier' and v_sale.cashier_id is distinct from v_uid then
+    raise exception 'Cashiers can only record payments for their own sales'
+      using errcode = '42501';
+  end if;
+
   if p_amount is null or p_amount <= 0 then
     raise exception 'Payment amount must be greater than zero' using errcode = '22023';
   end if;

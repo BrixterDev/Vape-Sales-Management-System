@@ -40,7 +40,8 @@ export interface Product {
 export interface ProductStock extends Product {
   brand: string | null;
   stock_qty: number;
-  stock_cost: number;
+  /** Null for cashiers — supplier cost is restricted. */
+  stock_cost: number | null;
   retail_value: number;
   is_low_stock: boolean;
 }

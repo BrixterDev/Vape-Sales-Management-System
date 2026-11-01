@@ -8,6 +8,36 @@ export interface ListParams {
   search?: string;
   lowStock?: boolean;
   archived?: boolean;
+  /** Managers and owners only — cashiers must never receive batch costs. */
+  includeCost?: boolean;
+}
+
+/**
+ * Attach supplier cost to stock rows. Cost lives in a separate invoker view so
+ * that RLS on batch_items blocks cashiers from ever reading supplier prices.
+ */
+async function attachCosts(
+  db: SupabaseClient,
+  rows: Array<Record<string, unknown>>,
+) {
+  if (rows.length === 0) return rows;
+
+  const ids = rows.map((row) => row.id as string);
+  const { data, error } = await db
+    .from("v_product_stock_costs")
+    .select("product_id, stock_cost")
+    .in("product_id", ids);
+
+  if (error) fail(error, "Unable to load stock costs");
+
+  const costs = new Map(
+    (data ?? []).map((row) => [row.product_id as string, Number(row.stock_cost)]),
+  );
+
+  return rows.map((row) => ({
+    ...row,
+    stock_cost: costs.get(row.id as string) ?? 0,
+  }));
 }
 
 export async function listStock(db: SupabaseClient, params: ListParams) {
@@ -31,15 +61,27 @@ export async function listStock(db: SupabaseClient, params: ListParams) {
 
   if (error) fail(error, "Unable to load inventory");
 
+  let items = (data ?? []) as Array<Record<string, unknown>>;
+
+  if (params.includeCost) {
+    items = await attachCosts(db, items);
+  } else {
+    items = items.map((row) => ({ ...row, stock_cost: null }));
+  }
+
   return {
-    items: data ?? [],
+    items,
     total: count ?? 0,
     page: params.page,
     pageSize: params.pageSize,
   };
 }
 
-export async function getProduct(db: SupabaseClient, id: string) {
+export async function getProduct(
+  db: SupabaseClient,
+  id: string,
+  includeCost = false,
+) {
   const { data, error } = await db
     .from("v_product_stock")
     .select("*")
@@ -47,7 +89,14 @@ export async function getProduct(db: SupabaseClient, id: string) {
     .maybeSingle();
 
   if (error) fail(error, "Unable to load product");
-  return data;
+  if (!data) return null;
+
+  const [row] = await attachCosts(
+    db,
+    includeCost ? [data as Record<string, unknown>] : [],
+  );
+
+  return row ?? data;
 }
 
 export async function createProduct(
@@ -127,7 +176,24 @@ export async function listMovements(
   return data ?? [];
 }
 
-export async function inventorySummary(db: SupabaseClient) {
+export async function inventorySummary(db: SupabaseClient, includeCost = true) {
+  if (!includeCost) {
+    const { data, error } = await db
+      .from("v_inventory_summary_public")
+      .select("*")
+      .maybeSingle();
+
+    if (error) fail(error, "Unable to load inventory summary");
+
+    return {
+      total_units: data?.total_units ?? 0,
+      low_stock_count: data?.low_stock_count ?? 0,
+      active_products: data?.active_products ?? 0,
+      total_cost_value: null,
+      total_retail_value: null,
+    };
+  }
+
   const { data, error } = await db.from("v_inventory_value").select("*").maybeSingle();
   if (error) fail(error, "Unable to load inventory summary");
   return data;

@@ -27,12 +27,14 @@ interface ListQuery {
 export const index: RequestHandler = async (req, res) => {
   const auth = authOf(req);
   const query = validated<ListQuery>(req, "query");
-  res.json(await listStock(auth.db, query));
+  const includeCost = auth.profile.role !== "cashier";
+  res.json(await listStock(auth.db, { ...query, includeCost }));
 };
 
 export const show: RequestHandler = async (req, res) => {
   const auth = authOf(req);
-  const product = await getProduct(auth.db, req.params.id as string);
+  const includeCost = auth.profile.role !== "cashier";
+  const product = await getProduct(auth.db, req.params.id as string, includeCost);
   if (!product) throw ApiError.notFound("Product not found");
   res.json(product);
 };
@@ -67,7 +69,8 @@ export const movements: RequestHandler = async (req, res) => {
 
 export const summary: RequestHandler = async (req, res) => {
   const auth = authOf(req);
-  res.json(await inventorySummary(auth.db));
+  const includeCost = auth.profile.role !== "cashier";
+  res.json(await inventorySummary(auth.db, includeCost));
 };
 
 export const brands: RequestHandler = async (req, res) => {

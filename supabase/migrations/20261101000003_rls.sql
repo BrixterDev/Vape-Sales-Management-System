@@ -178,4 +178,5 @@ revoke execute on function public.handle_new_user() from public, anon, authentic
 revoke execute on function public.write_audit_log() from public, anon, authenticated;
 revoke execute on function public.prevent_delete() from public, anon, authenticated;
 revoke execute on function public.guard_profile_privileges() from public, anon, authenticated;
+revoke execute on function public.guard_batch_item_immutability() from public, anon, authenticated;
 revoke execute on function public.set_updated_at() from public, anon, authenticated;

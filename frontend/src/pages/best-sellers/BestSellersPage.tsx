@@ -26,8 +26,11 @@ import {
   TableWrap,
 } from "@/components/ui/table";
 import { isoDate } from "@/lib/utils";
+import { useAuth } from "@/contexts/AuthContext";
 
 export default function BestSellersPage() {
+  const { profile } = useAuth();
+  const showProfit = profile?.role !== "cashier";
   const [from, setFrom] = useState(() => {
     const date = new Date();
     date.setDate(date.getDate() - 29);
@@ -168,11 +171,13 @@ export default function BestSellersPage() {
               label="Revenue"
               value={formatPHP(rows.reduce((sum, row) => sum + Number(row.revenue), 0))}
             />
-            <SummaryRow
-              label="Gross profit"
-              value={formatPHP(rows.reduce((sum, row) => sum + Number(row.gross_profit), 0))}
-              positive
-            />
+            {showProfit ? (
+              <SummaryRow
+                label="Gross profit"
+                value={formatPHP(rows.reduce((sum, row) => sum + Number(row.gross_profit), 0))}
+                positive
+              />
+            ) : null}
           </CardContent>
         </Card>
       </div>
@@ -196,7 +201,7 @@ export default function BestSellersPage() {
                 <TH>Flavor</TH>
                 <TH className="text-right">Qty Sold</TH>
                 <TH className="text-right">Revenue</TH>
-                <TH className="text-right">Gross Profit</TH>
+                {showProfit ? <TH className="text-right">Gross Profit</TH> : null}
               </TR>
             </THead>
             <TBody>
@@ -208,7 +213,11 @@ export default function BestSellersPage() {
                   <TD className="text-muted">{row.flavor}</TD>
                   <TD className="tabular text-right font-medium">{row.quantity_sold}</TD>
                   <TD className="tabular text-right">{formatPHP(row.revenue)}</TD>
-                  <TD className="tabular text-right text-accent">{formatPHP(row.gross_profit)}</TD>
+                  {showProfit ? (
+                    <TD className="tabular text-right text-accent">
+                      {formatPHP(row.gross_profit)}
+                    </TD>
+                  ) : null}
                 </TR>
               ))}
             </TBody>

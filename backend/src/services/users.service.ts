@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { randomInt } from "node:crypto";
 import type { InviteUserInput, UpdateUserInput } from "@vape/shared";
 import { getAdminClient } from "../config/supabase";
 import { ApiError } from "../lib/errors";
@@ -8,7 +9,7 @@ function tempPassword(): string {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$";
   let value = "";
   for (let i = 0; i < 14; i += 1) {
-    value += alphabet[Math.floor(Math.random() * alphabet.length)];
+    value += alphabet[randomInt(alphabet.length)];
   }
   return `${value}Aa1!`;
 }

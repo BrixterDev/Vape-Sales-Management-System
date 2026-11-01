@@ -48,6 +48,7 @@ export default function DashboardPage() {
   });
 
   const metrics = data?.metrics;
+  const showProfit = profile?.role !== "cashier";
 
   return (
     <div className="space-y-6">
@@ -111,13 +112,15 @@ export default function DashboardPage() {
               tone="positive"
               icon={<ArrowDownToLine className="h-4 w-4" />}
             />
-            <StatCard
-              label="Gross Profit"
-              value={formatPHP(metrics?.gross_profit)}
-              hint="Revenue less batch cost"
-              tone="positive"
-              icon={<TrendingUp className="h-4 w-4" />}
-            />
+            {showProfit ? (
+              <StatCard
+                label="Gross Profit"
+                value={formatPHP(metrics?.gross_profit)}
+                hint="Revenue less batch cost"
+                tone="positive"
+                icon={<TrendingUp className="h-4 w-4" />}
+              />
+            ) : null}
             <StatCard
               label="Outstanding"
               value={formatPHP(metrics?.outstanding)}
@@ -274,7 +277,7 @@ export default function DashboardPage() {
                   <TH className="text-right">Transactions</TH>
                   <TH className="text-right">Gross Sales</TH>
                   <TH className="text-right">Collected</TH>
-                  <TH className="text-right">Gross Profit</TH>
+                  {showProfit ? <TH className="text-right">Gross Profit</TH> : null}
                 </TR>
               </THead>
               <TBody>
@@ -284,12 +287,14 @@ export default function DashboardPage() {
                     <TD className="tabular text-right">{row.transaction_count}</TD>
                     <TD className="tabular text-right">{formatPHP(row.gross_sales)}</TD>
                     <TD className="tabular text-right text-accent">{formatPHP(row.collected)}</TD>
-                    <TD className="tabular text-right">{formatPHP(row.gross_profit)}</TD>
+                    {showProfit ? (
+                      <TD className="tabular text-right">{formatPHP(row.gross_profit)}</TD>
+                    ) : null}
                   </TR>
                 ))}
                 {!data?.trend?.length ? (
                   <TR>
-                    <TD colSpan={5}>
+                    <TD colSpan={showProfit ? 5 : 4}>
                       <EmptyState title="No activity yet" description="Sales will appear here." />
                     </TD>
                   </TR>

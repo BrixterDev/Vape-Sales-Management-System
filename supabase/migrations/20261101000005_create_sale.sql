@@ -94,6 +94,15 @@ begin
     raise exception 'Only owners and managers can apply discounts' using errcode = '42501';
   end if;
 
+  -- Manual (backdated) sales are a manager/owner workflow; cashiers use the POS.
+  if v_source = 'manual' and v_role = 'cashier' then
+    raise exception 'Only owners and managers can record manual sales' using errcode = '42501';
+  end if;
+
+  if v_role = 'cashier' and nullif(p_payload ->> 'sale_date', '') is not null then
+    raise exception 'Only owners and managers can backdate a sale' using errcode = '42501';
+  end if;
+
   if v_customer_id is not null then
     select name into v_customer_name
       from public.customers

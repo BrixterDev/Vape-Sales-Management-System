@@ -23,14 +23,38 @@ function rangeOf(req: { query: Record<string, unknown> }) {
 export const dashboard: RequestHandler = async (req, res) => {
   const auth = authOf(req);
   const { from, to } = rangeOf(req);
-  res.json(await dashboardMetrics(auth.db, from, to));
+  const result = await dashboardMetrics(auth.db, from, to);
+
+  // Gross profit is derived from supplier cost, which cashiers may not see.
+  if (auth.profile.role === "cashier") {
+    result.metrics = { ...result.metrics, gross_profit: 0 };
+    result.best_sellers = (result.best_sellers as Array<Record<string, unknown>>).map(
+      (row) => ({ ...row, gross_profit: 0 }),
+    );
+  }
+
+  res.json(result);
 };
 
 export const best: RequestHandler = async (req, res) => {
   const auth = authOf(req);
   const { from, to } = rangeOf(req);
   const limit = Number(req.query.limit ?? 20);
-  res.json(await bestSellers(auth.db, from, to, Number.isFinite(limit) ? limit : 20));
+  const result = await bestSellers(
+    auth.db,
+    from,
+    to,
+    Number.isFinite(limit) ? limit : 20,
+  );
+
+  if (auth.profile.role === "cashier") {
+    result.items = (result.items as Array<Record<string, unknown>>).map((row) => ({
+      ...row,
+      gross_profit: 0,
+    }));
+  }
+
+  res.json(result);
 };
 
 export const sales: RequestHandler = async (req, res) => {

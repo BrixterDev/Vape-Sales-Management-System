@@ -17,8 +17,9 @@ export interface Paginated<T> {
 
 export interface InventorySummary {
   total_units: number;
-  total_cost_value: number;
-  total_retail_value: number;
+  /** Null for cashiers — supplier cost is restricted. */
+  total_cost_value: number | null;
+  total_retail_value: number | null;
   low_stock_count: number;
   active_products: number;
 }

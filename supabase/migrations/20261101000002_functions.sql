@@ -176,6 +176,25 @@ begin
 end;
 $$;
 
+-- Historical batch costs and prices must never be rewritten.
+create or replace function public.guard_batch_item_immutability()
+returns trigger
+language plpgsql
+as $$
+begin
+  if new.batch_id is distinct from old.batch_id
+     or new.product_id is distinct from old.product_id
+     or new.quantity_received is distinct from old.quantity_received
+     or new.supplier_price is distinct from old.supplier_price
+     or new.selling_price is distinct from old.selling_price then
+    raise exception 'Batch product, received quantity, cost and selling price are immutable'
+      using errcode = '42501';
+  end if;
+
+  return new;
+end;
+$$;
+
 -- ------------------------------------------------------------- attach triggers
 create trigger brands_set_updated_at
   before update on public.brands
@@ -200,6 +219,10 @@ create trigger batches_set_updated_at
 create trigger batch_items_set_updated_at
   before update on public.batch_items
   for each row execute function public.set_updated_at();
+
+create trigger batch_items_guard_immutability
+  before update on public.batch_items
+  for each row execute function public.guard_batch_item_immutability();
 
 create trigger sales_set_updated_at
   before update on public.sales
