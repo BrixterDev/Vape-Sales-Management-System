@@ -109,8 +109,11 @@ npm run dev
 - **FIFO:** stock is consumed oldest batch first, or from a specific batch when one is supplied.
   Splits are recorded in `sale_item_allocations`.
 - **Costs:** `supplier_price`, `selling_price`, `unit_cost` are snapshotted per batch/sale and never
-  rewritten.
+  rewritten. Database triggers reject any attempt to edit batch cost, price or received quantity.
+- **Cost privacy:** cashiers never receive supplier cost or gross profit. Stock counts come from a
+  definer view that exposes quantities only, while cost views are RLS-protected.
 - **Payments:** appended, never overwritten. Payment status is derived from recorded payments.
+  Cashiers can only settle their own transactions.
 - **Voids:** owner/manager only. Restores stock via `void_return` movements, voids payments, keeps
   the transaction for audit. No hard deletes on transactional tables.
 - **Idempotency:** `create_sale` stores its response per `(key, user)`; retries return the original
@@ -121,15 +124,16 @@ npm run dev
 
 | Capability | Owner | Manager | Cashier |
 |---|:--:|:--:|:--:|
-| Dashboard / analytics | ✅ | ✅ | ✅ |
-| View inventory | ✅ | ✅ | ✅ |
+| Dashboard / analytics | ✅ | ✅ | ✅ (no profit) |
+| View inventory | ✅ | ✅ | ✅ (no cost) |
 | Create/edit/archive products | ✅ | ✅ | — |
 | Batches & suppliers | ✅ | ✅ | — |
 | POS checkout | ✅ | ✅ | ✅ |
 | Manual sales | ✅ | ✅ | — |
 | View all sales | ✅ | ✅ | own only |
-| Record payments | ✅ | ✅ | ✅ |
+| Record payments | ✅ | ✅ | own sales |
 | Void sales | ✅ | ✅ | — |
+| View supplier cost / profit | ✅ | ✅ | — |
 | Reports & exports | ✅ | ✅ | — |
 | User management / settings / audit | ✅ | — | — |
 
@@ -148,12 +152,27 @@ npm run db:push      # supabase db push
 
 ## Deployment
 
-**Frontend (Vercel):** root `frontend/`, build `npm run build`, output `dist`.
+Two Vercel projects point at the same repository.
 
-**Backend (Vercel):** root `backend/`, uses `api/index.ts` + `vercel.json` rewrites.
-Set the backend env vars in the Vercel project (never in the frontend).
+**Frontend (Vercel):** Root Directory `frontend/`, Framework preset Vite, build `npm run build`,
+output `dist`.
 
-Set `CORS_ORIGIN` to the deployed frontend origin.
+**Backend (Vercel):** Root Directory `backend/`, no framework preset. `vercel.json` routes every
+path to `api/index.ts`. Enable **Include source files outside of the Root Directory** so the
+shared workspace package is bundled.
+
+Environment variables:
+
+| Project | Variables |
+|---|---|
+| Backend | `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `CORS_ORIGIN` |
+| Frontend | `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_API_URL` |
+
+Set `VITE_API_URL` to the backend project URL plus `/api/v1`, and `CORS_ORIGIN` to the deployed
+frontend origin. Never expose the service role key to the frontend.
+
+Finally, in the Supabase dashboard keep **Authentication → Providers → Email → Allow new users to
+sign up** disabled, and create the first owner under **Authentication → Users → Add user**.
 
 ---
 

@@ -26,6 +26,18 @@ export async function createSale(db: SupabaseClient, input: CreateSaleInput) {
   return data;
 }
 
+/** Remove supplier cost from a sale payload before it reaches a cashier. */
+export function redactCost<T extends { items?: unknown }>(sale: T): T {
+  const items = Array.isArray(sale.items)
+    ? (sale.items as Array<Record<string, unknown>>).map((item) => {
+        const { unit_cost: _cost, ...rest } = item;
+        return rest;
+      })
+    : sale.items;
+
+  return { ...sale, items };
+}
+
 export async function listSales(db: SupabaseClient, params: SalesListParams) {
   let query = db.from("v_sale_balances").select("*", { count: "exact" });
 
@@ -44,7 +56,7 @@ export async function listSales(db: SupabaseClient, params: SalesListParams) {
 
   if (params.productId) {
     const { data: rows, error: itemError } = await db
-      .from("sale_items")
+      .from("v_sale_items")
       .select("sale_id")
       .eq("product_id", params.productId);
 
@@ -72,7 +84,11 @@ export async function listSales(db: SupabaseClient, params: SalesListParams) {
   };
 }
 
-export async function getSale(db: SupabaseClient, id: string) {
+export async function getSale(
+  db: SupabaseClient,
+  id: string,
+  includeCost = true,
+) {
   const { data: sale, error } = await db
     .from("v_sale_balances")
     .select("*")
@@ -84,7 +100,7 @@ export async function getSale(db: SupabaseClient, id: string) {
 
   const [{ data: items, error: itemError }, { data: payments, error: payError }] =
     await Promise.all([
-      db.from("sale_items").select("*").eq("sale_id", id).order("created_at"),
+      db.from("v_sale_items").select("*").eq("sale_id", id).order("created_at"),
       db
         .from("payments")
         .select("*")
@@ -105,17 +121,24 @@ export async function getSale(db: SupabaseClient, id: string) {
 
   const { data: allocations } = itemIds.length
     ? await db
-        .from("sale_item_allocations")
+        .from("v_sale_allocations")
         .select("sale_item_id, batch_item_id, quantity, unit_cost, unit_price")
         .in("sale_item_id", itemIds)
     : { data: [] as Array<Record<string, unknown>> };
 
+  const itemRows = (items ?? []) as Array<Record<string, unknown>>;
+  const allocationRows = (allocations ?? []) as Array<Record<string, unknown>>;
+
   return {
     ...sale,
     cashier_name: cashier?.full_name ?? null,
-    items: items ?? [],
+    items: includeCost
+      ? itemRows
+      : itemRows.map(({ unit_cost: _cost, ...rest }) => rest),
     payments: payments ?? [],
-    allocations: allocations ?? [],
+    allocations: includeCost
+      ? allocationRows
+      : allocationRows.map(({ unit_cost: _cost, ...rest }) => rest),
   };
 }
 

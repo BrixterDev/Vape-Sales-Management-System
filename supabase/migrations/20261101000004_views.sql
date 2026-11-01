@@ -137,6 +137,46 @@ select
   count(*) filter (where is_archived = false)::integer as active_products
 from public.v_product_stock;
 
+-- Sale history views. These run as the owner so they can filter rows with
+-- can_view_sale() and mask unit cost for cashiers. Direct SELECT on the base
+-- tables is revoked below, so PostgREST cannot bypass the mask.
+create or replace view public.v_sale_items as
+select
+  si.id,
+  si.sale_id,
+  si.product_id,
+  si.product_name,
+  si.brand_name,
+  si.flavor,
+  si.quantity,
+  si.unit_price,
+  si.line_total,
+  si.created_at,
+  s.sale_date,
+  s.status,
+  case
+    when public.is_manager_or_owner() then si.unit_cost
+    else null
+  end as unit_cost
+from public.sale_items si
+join public.sales s on s.id = si.sale_id
+where public.can_view_sale(si.sale_id);
+
+create or replace view public.v_sale_allocations as
+select
+  a.id,
+  a.sale_item_id,
+  a.batch_item_id,
+  a.quantity,
+  a.unit_price,
+  case
+    when public.is_manager_or_owner() then a.unit_cost
+    else null
+  end as unit_cost
+from public.sale_item_allocations a
+join public.sale_items si on si.id = a.sale_item_id
+where public.can_view_sale(si.sale_id);
+
 -- ============================================================================
 -- Privileges
 --
@@ -153,7 +193,9 @@ revoke all on
   public.v_sale_balances,
   public.v_customer_balances,
   public.v_inventory_value,
-  public.v_inventory_summary_public
+  public.v_inventory_summary_public,
+  public.v_sale_items,
+  public.v_sale_allocations
 from anon;
 
 grant select on
@@ -163,5 +205,11 @@ grant select on
   public.v_sale_balances,
   public.v_customer_balances,
   public.v_inventory_value,
-  public.v_inventory_summary_public
+  public.v_inventory_summary_public,
+  public.v_sale_items,
+  public.v_sale_allocations
 to authenticated;
+
+-- Cost-bearing history is only reachable through the masking views.
+revoke select on public.sale_items, public.sale_item_allocations
+  from anon, authenticated;

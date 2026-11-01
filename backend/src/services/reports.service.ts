@@ -171,13 +171,13 @@ export async function profitReport(
   const range = resolveRange(from, to);
 
   const { data, error } = await db
-    .from("sale_items")
+    .from("v_sale_items")
     .select(
-      "id, quantity, unit_cost, unit_price, line_total, products(name, flavor, brands(name)), sales!inner(sale_date, status)",
+      "id, quantity, unit_cost, unit_price, line_total, product_name, flavor, brand_name, sale_date, status",
     )
-    .gte("sales.sale_date", range.from)
-    .lt("sales.sale_date", range.to)
-    .eq("sales.status", "completed");
+    .gte("sale_date", range.from)
+    .lt("sale_date", range.to)
+    .eq("status", "completed");
 
   if (error) fail(error, "Unable to build the profit report");
   return { range, items: data ?? [] };

@@ -8,6 +8,7 @@ import {
   createSale,
   getSale,
   listSales,
+  redactCost,
   updateSaleDetails,
   voidSale,
 } from "../services/sales.service";
@@ -53,7 +54,8 @@ export const index: RequestHandler = async (req, res) => {
 
 export const show: RequestHandler = async (req, res) => {
   const auth = authOf(req);
-  const sale = await getSale(auth.db, req.params.id as string);
+  const includeCost = auth.profile.role !== "cashier";
+  const sale = await getSale(auth.db, req.params.id as string, includeCost);
   if (!sale) throw ApiError.notFound("Sale not found");
   res.json(sale);
 };
@@ -66,7 +68,10 @@ export const store: RequestHandler = async (req, res) => {
     throw ApiError.forbidden("Cashiers cannot record manual sales");
   }
 
-  res.status(201).json(await createSale(auth.db, body));
+  const sale = await createSale(auth.db, body);
+  res
+    .status(201)
+    .json(auth.profile.role === "cashier" ? redactCost(sale as { items?: unknown }) : sale);
 };
 
 export const recordPayment: RequestHandler = async (req, res) => {

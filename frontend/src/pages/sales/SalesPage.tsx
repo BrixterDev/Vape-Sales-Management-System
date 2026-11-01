@@ -53,6 +53,7 @@ function paymentTone(status: string): Tone {
 export default function SalesPage() {
   const { profile } = useAuth();
   const canVoid = profile?.role === "owner" || profile?.role === "manager";
+  const showCost = profile?.role !== "cashier";
   const canManual = canVoid;
   const queryClient = useQueryClient();
 
@@ -400,7 +401,7 @@ export default function SalesPage() {
                     <TH>Product</TH>
                     <TH className="text-right">Qty</TH>
                     <TH className="text-right">Price</TH>
-                    <TH className="text-right">Cost</TH>
+                    {showCost ? <TH className="text-right">Cost</TH> : null}
                     <TH className="text-right">Total</TH>
                   </TR>
                 </THead>
@@ -415,7 +416,11 @@ export default function SalesPage() {
                       </TD>
                       <TD className="tabular text-right">{item.quantity}</TD>
                       <TD className="tabular text-right">{formatPHP(item.unit_price)}</TD>
-                      <TD className="tabular text-right text-muted">{formatPHP(item.unit_cost)}</TD>
+                      {showCost ? (
+                        <TD className="tabular text-right text-muted">
+                          {item.unit_cost == null ? "\u2014" : formatPHP(item.unit_cost)}
+                        </TD>
+                      ) : null}
                       <TD className="tabular text-right">{formatPHP(item.line_total)}</TD>
                     </TR>
                   ))}
