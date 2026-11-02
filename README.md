@@ -208,6 +208,7 @@ sign up** disabled, and create the first owner under **Authentication → Users 
 
 ## Notes
 
+- Build history, problems encountered and deployment lessons: [`docs/BUILD-JOURNAL.md`](docs/BUILD-JOURNAL.md).
 - Expenses, cash-drawer shifts, returns/refunds and VAT are intentionally out of scope for v1.
 - Reports exclude voided sales.
 - Daily/weekly/monthly buckets use `Asia/Manila`, not UTC.
