@@ -165,34 +165,41 @@ An empty result means every assertion passed; any failure raises an exception.
 
 ## Deployment
 
-One Vercel project deploys both services from the repository root (`vercel.json`):
+The repository deploys as **one Vercel project with two services**, configured in the root
+`vercel.json`:
 
-- **frontend** — Vite SPA, public catch-all (`/`)
-- **backend** — Express API, public at `/api/*`, entrypoint `api/index.ts`
+| Service | Kind | Public path | Config |
+|---|---|---|---|
+| `frontend` | Vite static SPA | `/` (catch-all) | `root: frontend`, output `dist`, SPA fallback rewrite |
+| `backend` | Express API | `/api/*` | `root: backend`, entrypoint `api/index.ts` |
 
-Because both run on the same domain, the frontend calls the API with relative URLs (`/api/v1/...`).
-Leave `VITE_API_URL` **unset** for this deployment; set it only if you later host the API on a
-separate origin.
+Both services share the deployment domain, so the browser reaches the API through the `/api/*`
+rewrite. The frontend therefore uses relative URLs (`/api/v1/...`) and `VITE_API_URL` must stay
+**unset** in this setup. Set it only if the API is ever moved to a different origin.
 
-Environment variables (Project → Settings → Environment Variables; they are shared by all
-services in the project):
+`backend/vercel.json` is kept for deploying the API as its own standalone Vercel project
+(Root Directory `backend/`). The single-project services deployment is driven entirely by the
+root `vercel.json`.
+
+Environment variables live at the project level (Settings → Environment Variables) and are shared
+by both services:
 
 | Variable | Used by | Notes |
 |---|---|---|
 | `SUPABASE_URL` | backend | Supabase project URL |
 | `SUPABASE_ANON_KEY` | backend | public anon key |
 | `SUPABASE_SERVICE_ROLE_KEY` | backend | server-only, never expose to the frontend |
-| `CORS_ORIGIN` | backend | deployment origin(s), comma-separated; same-origin requests are always allowed |
+| `CORS_ORIGIN` | backend | allowed origins, comma-separated; same-origin requests are always allowed |
 | `VITE_SUPABASE_URL` | frontend (build time) | Supabase project URL |
 | `VITE_SUPABASE_ANON_KEY` | frontend (build time) | public anon key |
 
 `VITE_*` values are inlined at build time, so redeploy after changing them.
 
-The backend installs/builds `@vape/shared` through the npm workspace (`prepare` script), so no
-extra build step is needed.
+No extra build step is needed for the shared package: the npm workspace runs its `prepare` script
+during install and produces `shared/dist` before either service builds.
 
-Deploy with `vercel` from the repository root (or connect the repo in the Vercel dashboard and
-push to `main`).
+Deploy from the repository root with `vercel`, or connect the repository in the Vercel dashboard
+and push to `main`.
 
 Finally, in the Supabase dashboard keep **Authentication → Providers → Email → Allow new users to
 sign up** disabled, and create the first owner under **Authentication → Users → Add user**.
