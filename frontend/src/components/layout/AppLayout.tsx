@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import { Menu, Store } from "lucide-react";
 import { Sidebar } from "./Sidebar";
@@ -25,12 +25,20 @@ export function AppLayout() {
       "/settings": "Settings",
     }[location.pathname] ?? "Vape Store";
 
+  const mainRef = useRef<HTMLElement>(null);
+
+  // Keep each page starting at the top when navigating (the content area
+  // is its own scroll container now, so the browser won't do it for us).
+  useEffect(() => {
+    mainRef.current?.scrollTo({ top: 0 });
+  }, [location.pathname]);
+
   return (
-    <div className="flex h-full min-h-screen bg-canvas">
+    <div className="flex h-dvh overflow-hidden bg-canvas">
       <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-30 flex h-16 items-center justify-between gap-3 border-b border-line bg-canvas/90 px-4 backdrop-blur lg:px-8">
+        <header className="z-30 flex h-16 shrink-0 items-center justify-between gap-3 border-b border-line bg-canvas/90 px-4 backdrop-blur lg:px-8">
           <div className="flex items-center gap-3">
             <button
               className="rounded-md p-2 text-muted hover:bg-surface-2 lg:hidden"
@@ -53,7 +61,10 @@ export function AppLayout() {
           </div>
         </header>
 
-        <main className="mx-auto w-full max-w-[1600px] flex-1 p-4 lg:p-8">
+        <main
+          ref={mainRef}
+          className="mx-auto w-full max-w-[1600px] flex-1 overflow-y-auto p-4 lg:p-8"
+        >
           <Outlet />
         </main>
       </div>

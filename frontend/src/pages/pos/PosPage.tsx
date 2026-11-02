@@ -248,7 +248,7 @@ export default function PosPage() {
         )}
       </div>
 
-      <Card className="flex h-fit flex-col xl:sticky xl:top-20">
+      <Card className="flex h-fit flex-col xl:sticky xl:top-4">
         <div className="border-b border-line p-4">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold">Current sale</h2>
