@@ -16,6 +16,25 @@ export function createApp() {
 
   app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
 
+  // The frontend and API share one origin in production (Vercel services
+  // routing), but browsers still attach an Origin header to same-origin
+  // POST/PATCH/DELETE requests. Treat those as same-origin so they are not
+  // rejected by the CORS allowlist; genuinely cross-origin requests still go
+  // through the CORS_ORIGIN check below.
+  app.use((req, _res, next) => {
+    const origin = req.headers.origin;
+    if (origin && req.headers.host) {
+      try {
+        if (new URL(origin).host === req.headers.host) {
+          delete req.headers.origin;
+        }
+      } catch {
+        // Malformed Origin header: leave it for the CORS check to reject.
+      }
+    }
+    next();
+  });
+
   const corsOptions: CorsOptions = {
     origin(origin, callback) {
       if (!origin || corsOrigins.includes(origin)) {

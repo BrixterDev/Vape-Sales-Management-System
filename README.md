@@ -165,24 +165,34 @@ An empty result means every assertion passed; any failure raises an exception.
 
 ## Deployment
 
-Two Vercel projects point at the same repository.
+One Vercel project deploys both services from the repository root (`vercel.json`):
 
-**Frontend (Vercel):** Root Directory `frontend/`, Framework preset Vite, build `npm run build`,
-output `dist`.
+- **frontend** — Vite SPA, public catch-all (`/`)
+- **backend** — Express API, public at `/api/*`, entrypoint `api/index.ts`
 
-**Backend (Vercel):** Root Directory `backend/`, no framework preset. `vercel.json` routes every
-path to `api/index.ts`. Enable **Include source files outside of the Root Directory** so the
-shared workspace package is bundled.
+Because both run on the same domain, the frontend calls the API with relative URLs (`/api/v1/...`).
+Leave `VITE_API_URL` **unset** for this deployment; set it only if you later host the API on a
+separate origin.
 
-Environment variables:
+Environment variables (Project → Settings → Environment Variables; they are shared by all
+services in the project):
 
-| Project | Variables |
-|---|---|
-| Backend | `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `CORS_ORIGIN` |
-| Frontend | `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_API_URL` |
+| Variable | Used by | Notes |
+|---|---|---|
+| `SUPABASE_URL` | backend | Supabase project URL |
+| `SUPABASE_ANON_KEY` | backend | public anon key |
+| `SUPABASE_SERVICE_ROLE_KEY` | backend | server-only, never expose to the frontend |
+| `CORS_ORIGIN` | backend | deployment origin(s), comma-separated; same-origin requests are always allowed |
+| `VITE_SUPABASE_URL` | frontend (build time) | Supabase project URL |
+| `VITE_SUPABASE_ANON_KEY` | frontend (build time) | public anon key |
 
-Set `VITE_API_URL` to the backend project URL plus `/api/v1`, and `CORS_ORIGIN` to the deployed
-frontend origin. Never expose the service role key to the frontend.
+`VITE_*` values are inlined at build time, so redeploy after changing them.
+
+The backend installs/builds `@vape/shared` through the npm workspace (`prepare` script), so no
+extra build step is needed.
+
+Deploy with `vercel` from the repository root (or connect the repo in the Vercel dashboard and
+push to `main`).
 
 Finally, in the Supabase dashboard keep **Authentication → Providers → Email → Allow new users to
 sign up** disabled, and create the first owner under **Authentication → Users → Add user**.
