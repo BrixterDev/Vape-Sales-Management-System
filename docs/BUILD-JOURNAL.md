@@ -5,6 +5,8 @@ and the rules to carry into the next project.
 
 > Audience: future you, and anyone starting a similar PERN / Supabase + Vercel app.
 > Read section 6 and 7 before starting a new system.
+>
+> Last updated: 2026-11-03
 
 ---
 
@@ -416,6 +418,9 @@ curl https://<app>.vercel.app/api/v1/health        # {"status":"ok"}
 17. **Do not skip `npm install` from a workspace subdirectory when debugging builds.** npm
     walks up to the workspace root; Vercel may run install at the root. Verify, do not assume.
 18. **Do not forget lazy loading.** Route-level `lazy()` from day one.
+19. **Do not trust relationship/embed names in a query builder.** Verify the column exists on the embedded table; a wrong embed is a 500 at runtime, not a type error.
+20. **Do not render "empty" when a request failed.** Always branch on `isError`; an error that looks like "no data" costs hours.
+21. **Do not print from inside a modal.** Render a print-only copy outside the dialog; `overflow: hidden` and max-heights silently clip printouts.
 
 ---
 
@@ -490,3 +495,99 @@ curl https://<app>.vercel.app/api/v1/health        # {"status":"ok"}
 - Out of scope for v1: expenses, cash-drawer shifts, returns/refunds, VAT.
 - Single store only; no multi-tenant isolation.
 - The `service_role` key shared during setup should be rotated.
+
+---
+
+## 9. Change log - 2026-11-03
+
+This is the record of the day the app went live on Vercel and received its first
+post-deployment fixes. Everything below is already in `main`.
+
+### 9.1 Commits
+
+| Time | Commit | Change |
+|---|---|---|
+| 01:29 | `cb90399` | App-shell layout: fixed sidebar/header, `main` is the only scroll container |
+| 02:44 | `58797d8` | Single Vercel project with `services`; same-origin CORS fix |
+| 02:51 | `4e0f85c` | Deployment docs; restored `backend/vercel.json` for standalone use |
+| 03:26 | `bcb1848` | Added this build journal |
+| 13:15 | `c3ea7ae` | Fixed stock movement history 500; show batch number |
+| 13:35 | `c63795c` | POS hides out-of-stock products |
+| 13:43 | `dda5d05` | Complete 80mm thermal receipt |
+
+### 9.2 Deployment go-live
+
+- Deployed as one Vercel project (`vercel.json` services: `backend`, `frontend`).
+- First deploy failed at runtime with `Uncaught Error: supabaseUrl is required` because
+  `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` were missing at build time.
+- Fix: created a gitignored `.env.vercel` with the backend and frontend variables, bulk
+  imported it in Vercel for all environments, then redeployed with the build cache disabled.
+- Verified `/api/v1/health`, login, and a cross-origin rejection on the live domain.
+- Security follow-up still open: rotate the `service_role` key that was shared in chat.
+
+### 9.3 Fix - stock movement history returned 500 (`c3ea7ae`)
+
+- **Symptom:** `GET /api/v1/products/:id/movements` returned 500; the Inventory history
+  dialog showed "No movements yet".
+- **Root cause:** the select embedded `batch_items:batch_item_id(batch_number)`, but
+  `batch_number` lives on `batches`, not `batch_items`. PostgREST rejected the query and
+  `fail()` had no mapping for the error, so it became a generic 500.
+- **Fix:**
+  - Correct embed: `batch_items:batch_item_id(batch_id, batches(batch_number))`, flattened
+    to `batch_number` on each movement.
+  - Added `batch_number` to the shared `StockMovement` type.
+  - Added `movementsQuerySchema` (`limit` 1-500, default 100) so `?limit=abc` is a 422
+    instead of a `NaN` query.
+  - Frontend dialog now shows an error message + **Retry** instead of a false empty state.
+  - Each history row displays a **Batch …** pill.
+- **Verified:** owner JWT against the live database returned 200 with `batch_number:
+  "BATCH Testing"`; invalid limit returned 422.
+- **Lesson:** query-builder embeds are runtime strings. Check the column on the embedded
+  table, and never let a failed request render as "no data".
+
+### 9.4 Feature - POS hides out-of-stock products (`c63795c`)
+
+- **Request:** sold-out items should not appear in the POS grid; they confused the seller.
+- **Fix:**
+  - Added `inStock` to `inventoryQuerySchema` (optional, default off) and applied
+    `.gt("stock_qty", 0)` in `listStock`.
+  - POS requests `inStock=true` with `pageSize=100`, plus a defensive client filter.
+  - Removed the disabled/faded card UI.
+  - Empty states now explain that out-of-stock items are hidden; scanning a sold-out code
+    shows a toast instead of doing nothing.
+- **Deliberately unchanged:** the Inventory page still shows zero-stock products, and the
+  cart still caps quantity against the stock snapshot.
+- **Why server-side:** filtering only in the browser would let sold-out rows consume the
+  100 saved slots and silently hide sellable products.
+- **Verified:** `?inStock=true` returns only positive stock; no filter returns everything;
+  `?inStock=maybe` returns 422.
+
+### 9.5 Feature - complete 80mm thermal receipt (`dda5d05`)
+
+- **Request:** the receipt should print full; 80mm thermal paper chosen.
+- **Problems with the old version:**
+  - The receipt was a 58mm absolutely-positioned element inside the modal.
+  - The modal's `overflow-hidden` + `max-h-[92vh]` clipped longer receipts on print.
+  - The receipt was missing store details, cashier, payment method and footer.
+- **Fix:**
+  - New shared component `frontend/src/components/receipt/SaleReceipt.tsx`, used by both
+    the on-screen preview and the print copy.
+  - A print-only portal (`.print-root` on `document.body`) is rendered on success.
+  - `@media print` hides `body > *:not(.print-root)` (removes, not just hides) so nothing
+    can clip, then prints black on white at `@page { size: 80mm auto; margin: 3mm }`.
+  - Receipt now includes store name/address/phone and footer from Settings, cashier,
+    customer, per-item qty x price, subtotal, discount, total, paid, change, balance,
+    payment method and reference.
+  - Change, method and reference are snapshotted on success before the form resets.
+- **Verified:** typecheck and production build pass. Manual print check: complete a sale,
+  Print receipt, choose the 80mm printer, 100% scale, margins none/default.
+- **Lesson:** never print from inside a modal. Render a dedicated print-only copy in normal
+  document flow.
+
+### 9.6 Still open after today
+
+- Rotate the exposed `service_role` key.
+- Add the SQL smoke tests to CI.
+- Add an ESLint flat config (currently `lint` is a typecheck alias).
+- Route-level code splitting (the bundle is still ~1.1 MB).
+
