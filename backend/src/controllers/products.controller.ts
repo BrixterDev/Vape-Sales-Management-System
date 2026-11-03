@@ -63,7 +63,7 @@ export const archive: RequestHandler = async (req, res) => {
 
 export const movements: RequestHandler = async (req, res) => {
   const auth = authOf(req);
-  const limit = Number(req.query.limit ?? 100);
+  const { limit } = validated<{ limit: number }>(req, "query");
   res.json(await listMovements(auth.db, req.params.id as string, limit));
 };
 

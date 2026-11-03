@@ -166,14 +166,23 @@ export async function listMovements(
   const { data, error } = await db
     .from("stock_movements")
     .select(
-      "id, product_id, batch_item_id, type, quantity_delta, sale_id, actor_id, reason, created_at, batch_items:batch_item_id(batch_number)",
+      "id, product_id, batch_item_id, type, quantity_delta, sale_id, actor_id, reason, created_at, batch_items:batch_item_id(batch_id, batches(batch_number))",
     )
     .eq("product_id", productId)
     .order("created_at", { ascending: false })
     .limit(Math.min(limit, 500));
 
   if (error) fail(error, "Unable to load stock movements");
-  return data ?? [];
+
+  const rows = (data ?? []) as Array<{
+    batch_items?: { batches?: { batch_number?: string | null } | null } | null;
+    [key: string]: unknown;
+  }>;
+
+  return rows.map(({ batch_items, ...movement }) => ({
+    ...movement,
+    batch_number: batch_items?.batches?.batch_number ?? null,
+  }));
 }
 
 export async function inventorySummary(db: SupabaseClient, includeCost = true) {

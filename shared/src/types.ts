@@ -187,6 +187,8 @@ export interface StockMovement {
   sale_id: string | null;
   actor_id: string | null;
   reason: string | null;
+  /** Batch the movement belongs to, when it came from a batch item. */
+  batch_number: string | null;
   created_at: string;
 }
 

@@ -483,6 +483,17 @@ export default function InventoryPage() {
               <Skeleton key={index} className="h-10" />
             ))}
           </div>
+        ) : movementsQuery.isError ? (
+          <div className="space-y-3 rounded-lg border border-danger/30 bg-danger/5 p-4">
+            <p className="text-sm text-danger">{errorMessage(movementsQuery.error)}</p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void movementsQuery.refetch()}
+            >
+              Retry
+            </Button>
+          </div>
         ) : (movementsQuery.data ?? []).length === 0 ? (
           <EmptyState title="No movements yet" description="Receiving a batch or selling this product will create history." />
         ) : (
@@ -493,7 +504,14 @@ export default function InventoryPage() {
                 className="flex items-center justify-between gap-3 rounded-lg border border-line bg-canvas/60 px-3 py-2"
               >
                 <div className="min-w-0">
-                  <p className="text-sm capitalize">{movement.type.replace("_", " ")}</p>
+                  <p className="flex flex-wrap items-center gap-2 text-sm capitalize">
+                    {movement.type.replace("_", " ")}
+                    {movement.batch_number ? (
+                      <span className="rounded-full border border-line px-2 py-0.5 text-[10px] font-normal text-muted">
+                        Batch {movement.batch_number}
+                      </span>
+                    ) : null}
+                  </p>
                   <p className="truncate text-[11px] text-muted">
                     {formatDateTime(movement.created_at)}
                     {movement.reason ? ` \u00b7 ${movement.reason}` : ""}

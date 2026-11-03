@@ -79,6 +79,10 @@ export const inventoryQuerySchema = paginationSchema.extend({
   archived: queryBoolean,
 });
 
+export const movementsQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(500).default(100),
+});
+
 /* -------------------------------------------------------------- suppliers */
 
 export const supplierSchema = z.object({
