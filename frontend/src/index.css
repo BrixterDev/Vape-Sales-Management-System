@@ -90,22 +90,113 @@
   }
 }
 
+/* ------------------------------------------------------------------ receipt */
+
+.receipt {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono",
+    monospace;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--color-foreground);
+}
+
+.receipt__center {
+  text-align: center;
+}
+
+.receipt__store {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.receipt__muted {
+  color: var(--color-muted);
+}
+
+.receipt__small {
+  font-size: 10px;
+}
+
+.receipt__divider {
+  border-top: 1px dashed currentColor;
+  margin: 8px 0;
+  opacity: 0.45;
+}
+
+.receipt__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.receipt__row > span:last-child {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.receipt__items {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.receipt__item {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.receipt__item-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.receipt__item-amount {
+  flex: 0 0 auto;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.receipt__total {
+  font-weight: 700;
+}
+
+.receipt__footer {
+  margin-top: 10px;
+  text-align: center;
+}
+
+/* Print-only copy; hidden on screen so the modal can never clip it. */
+.print-root {
+  display: none;
+}
+
 @media print {
-  body * {
-    visibility: hidden;
+  @page {
+    size: 80mm auto;
+    margin: 3mm;
   }
 
-  .print-area,
-  .print-area * {
-    visibility: visible;
+  html,
+  body {
+    background: #ffffff !important;
   }
 
-  .print-area {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 58mm;
+  /* Only the dedicated print node is rendered - the app and any open modal
+     portal are removed instead of being hidden, so nothing is clipped. */
+  body > *:not(.print-root) {
+    display: none !important;
+  }
+
+  .print-root {
+    display: block !important;
+    width: 100%;
+    max-width: 80mm;
     margin: 0;
+    padding: 0;
     color: #000000;
     background: #ffffff;
   }
@@ -114,7 +205,22 @@
     display: none !important;
   }
 
-  @page {
-    margin: 4mm;
+  .receipt {
+    color: #000000 !important;
+    font-size: 11px;
+  }
+
+  .receipt__muted {
+    color: #333333 !important;
+  }
+
+  .receipt__divider {
+    opacity: 1;
+    border-top-color: #000000;
+  }
+
+  .receipt a {
+    color: #000000;
+    text-decoration: none;
   }
 }

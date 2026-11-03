@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   Banknote,
@@ -17,11 +18,13 @@ import type { CreateSaleResult, ProductStock } from "@vape/shared";
 import { productsService } from "@/services/products";
 import { salesService } from "@/services/sales";
 import { customersService } from "@/services/parties";
+import { settingsService } from "@/services/account";
+import { useAuth } from "@/contexts/AuthContext";
 import { useDebounced } from "@/hooks/useDebounced";
 import { errorMessage } from "@/lib/api";
+import { SaleReceipt, type ReceiptPaymentMethod } from "@/components/receipt/SaleReceipt";
 import {
   cn,
-  formatDateTime,
   formatPHP,
   newIdempotencyKey,
 } from "@/lib/utils";
@@ -47,7 +50,13 @@ export default function PosPage() {
   const [received, setReceived] = useState("");
   const [idempotencyKey, setIdempotencyKey] = useState(newIdempotencyKey);
   const [receipt, setReceipt] = useState<CreateSaleResult | null>(null);
+  const [receiptMeta, setReceiptMeta] = useState<{
+    method: ReceiptPaymentMethod;
+    reference: string | null;
+    change: number;
+  }>({ method: "cash", reference: null, change: 0 });
   const searchRef = useRef<HTMLInputElement>(null);
+  const { profile } = useAuth();
 
   const productsQuery = useQuery({
     queryKey: ["pos-products", debounced],
@@ -63,6 +72,12 @@ export default function PosPage() {
   const customersQuery = useQuery({
     queryKey: ["customer-options"],
     queryFn: () => customersService.list({ page: 1, pageSize: 100 }),
+  });
+
+  const settingsQuery = useQuery({
+    queryKey: ["settings"],
+    queryFn: settingsService.get,
+    staleTime: 5 * 60 * 1000,
   });
 
   const products = useMemo(
@@ -155,6 +170,11 @@ export default function PosPage() {
       }),
     onSuccess: (result) => {
       setReceipt(result);
+      setReceiptMeta({
+        method,
+        reference: reference.trim() || null,
+        change: Math.max(0, receivedNumber - Number(result.total)),
+      });
       setCart({});
       setReceived("");
       setReference("");
@@ -165,6 +185,17 @@ export default function PosPage() {
     },
     onError: (error) => toast.error(errorMessage(error)),
   });
+
+  const receiptContent = receipt ? (
+    <SaleReceipt
+      receipt={receipt}
+      settings={settingsQuery.data}
+      cashierName={profile?.full_name}
+      method={receiptMeta.method}
+      reference={receiptMeta.reference}
+      change={receiptMeta.change}
+    />
+  ) : null;
 
   return (
     <div className="grid gap-4 xl:grid-cols-[1fr_400px]">
@@ -410,56 +441,21 @@ export default function PosPage() {
           </>
         }
       >
-        {receipt ? (
-          <div className="print-area mx-auto max-w-xs font-mono text-xs">
-            <div className="mb-3 flex items-center justify-center gap-2 text-accent">
-              <CheckCircle2 className="h-5 w-5" />
-              <span className="font-sans text-sm font-semibold">Paid</span>
-            </div>
-            <div className="space-y-1 border-b border-dashed border-line pb-2">
-              <div className="flex justify-between">
-                <span className="text-muted">Receipt</span>
-                <span>{receipt.transaction_number}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted">Date</span>
-                <span>{formatDateTime(new Date().toISOString())}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted">Customer</span>
-                <span>{receipt.customer_name || "Walk-in"}</span>
-              </div>
-            </div>
-            <div className="space-y-1 border-b border-dashed border-line py-2">
-              {receipt.items.map((item) => (
-                <div key={`${item.product_id}-${item.flavor}`} className="flex justify-between gap-2">
-                  <span className="truncate">
-                    {item.quantity} × {item.product_name}
-                  </span>
-                  <span className="tabular">{formatPHP(item.line_total)}</span>
-                </div>
-              ))}
-            </div>
-            <div className="space-y-1 pt-2">
-              <div className="flex justify-between font-semibold">
-                <span>Total</span>
-                <span className="tabular">{formatPHP(receipt.total)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted">Paid</span>
-                <span className="tabular">{formatPHP(receipt.paid_amount)}</span>
-              </div>
-              {receipt.balance > 0 ? (
-                <div className="flex justify-between text-danger">
-                  <span>Balance</span>
-                  <span className="tabular">{formatPHP(receipt.balance)}</span>
-                </div>
-              ) : null}
-            </div>
-            <p className="mt-4 text-center text-[10px] text-muted">Thank you!</p>
+        <div className="mx-auto w-full max-w-[300px]">
+          <div className="mb-3 flex items-center justify-center gap-2 text-accent">
+            <CheckCircle2 className="h-5 w-5" />
+            <span className="text-sm font-semibold">Paid</span>
           </div>
-        ) : null}
+          {receiptContent}
+        </div>
       </Dialog>
+
+      {receipt
+        ? createPortal(
+            <div className="print-root">{receiptContent}</div>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }
