@@ -22,6 +22,7 @@ interface ListQuery {
   search?: string;
   lowStock?: boolean;
   archived?: boolean;
+  inStock?: boolean;
 }
 
 export const index: RequestHandler = async (req, res) => {

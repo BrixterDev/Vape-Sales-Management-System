@@ -77,6 +77,7 @@ export const inventoryQuerySchema = paginationSchema.extend({
   search: z.string().trim().max(120).optional(),
   lowStock: queryBoolean,
   archived: queryBoolean,
+  inStock: queryBoolean,
 });
 
 export const movementsQuerySchema = z.object({

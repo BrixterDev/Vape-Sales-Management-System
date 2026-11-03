@@ -54,8 +54,9 @@ export default function PosPage() {
     queryFn: () =>
       productsService.list({
         page: 1,
-        pageSize: 50,
+        pageSize: 100,
         search: debounced || undefined,
+        inStock: true,
       }),
   });
 
@@ -65,7 +66,10 @@ export default function PosPage() {
   });
 
   const products = useMemo(
-    () => (productsQuery.data?.items ?? []).filter((product) => !product.is_archived),
+    () =>
+      (productsQuery.data?.items ?? []).filter(
+        (product) => !product.is_archived && product.stock_qty > 0,
+      ),
     [productsQuery.data],
   );
 
@@ -128,6 +132,8 @@ export default function PosPage() {
       addToCart(match);
       setSearch("");
       searchRef.current?.focus();
+    } else {
+      toast.error("No in-stock product matches that code.");
     }
   };
 
@@ -199,8 +205,14 @@ export default function PosPage() {
           <Card>
             <EmptyState
               icon={<Search className="h-5 w-5" />}
-              title="No products found"
-              description="Try a different search, or receive a batch to add stock."
+              title={
+                debounced.trim() ? "No in-stock products found" : "No products in stock"
+              }
+              description={
+                debounced.trim()
+                  ? "Nothing in stock matches that search. Out-of-stock items are hidden from POS."
+                  : "Receive a batch to start selling. Out-of-stock items are hidden from POS."
+              }
             />
           </Card>
         ) : (
@@ -211,13 +223,7 @@ export default function PosPage() {
                 <button
                   key={product.id}
                   onClick={() => addToCart(product)}
-                  disabled={product.stock_qty <= 0}
-                  className={cn(
-                    "group flex flex-col rounded-xl border border-line bg-surface p-4 text-left transition-colors",
-                    product.stock_qty <= 0
-                      ? "cursor-not-allowed opacity-50"
-                      : "hover:border-accent/40 hover:bg-surface-hover",
-                  )}
+                  className="group flex flex-col rounded-xl border border-line bg-surface p-4 text-left transition-colors hover:border-accent/40 hover:bg-surface-hover"
                 >
                   <div className="flex w-full items-start justify-between gap-2">
                     <div className="min-w-0">

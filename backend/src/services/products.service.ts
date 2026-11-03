@@ -8,6 +8,8 @@ export interface ListParams {
   search?: string;
   lowStock?: boolean;
   archived?: boolean;
+  /** POS only: hide products with no stock left. */
+  inStock?: boolean;
   /** Managers and owners only — cashiers must never receive batch costs. */
   includeCost?: boolean;
 }
@@ -47,6 +49,10 @@ export async function listStock(db: SupabaseClient, params: ListParams) {
 
   if (params.lowStock) {
     query = query.eq("is_low_stock", true);
+  }
+
+  if (params.inStock) {
+    query = query.gt("stock_qty", 0);
   }
 
   const term = sanitizeSearch(params.search);

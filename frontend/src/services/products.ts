@@ -31,6 +31,7 @@ export const productsService = {
     search?: string;
     lowStock?: boolean;
     archived?: boolean;
+    inStock?: boolean;
   }) => api.get<Paginated<ProductStock>>("/products", params),
 
   get: (id: string) => api.get<ProductStock>(`/products/${id}`),
