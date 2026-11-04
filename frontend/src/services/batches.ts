@@ -35,9 +35,13 @@ export const batchesService = {
     supplier_id?: string;
     from?: string;
     to?: string;
+    archived?: boolean;
   }) => api.get<Paginated<BatchSummary>>("/batches", params),
 
   get: (id: string) => api.get<BatchDetail>(`/batches/${id}`),
+
+  archive: (id: string, archived: boolean) =>
+    api.post<Batch>(`/batches/${id}/archive`, { archived }),
 
   create: (input: BatchInput) =>
     api.post<{ batch_id: string; batch_number: string; item_count: number }>(

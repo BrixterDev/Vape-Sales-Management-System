@@ -1,9 +1,10 @@
 import { useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Banknote,
   CheckCircle2,
+  Layers,
   Minus,
   Plus,
   Printer,
@@ -14,7 +15,11 @@ import {
   Wallet,
 } from "lucide-react";
 import { toast } from "sonner";
-import type { CreateSaleResult, ProductStock } from "@vape/shared";
+import type {
+  CreateSaleResult,
+  ProductBatchOption,
+  ProductStock,
+} from "@vape/shared";
 import { productsService } from "@/services/products";
 import { salesService } from "@/services/sales";
 import { customersService } from "@/services/parties";
@@ -25,6 +30,7 @@ import { errorMessage } from "@/lib/api";
 import { SaleReceipt, type ReceiptPaymentMethod } from "@/components/receipt/SaleReceipt";
 import {
   cn,
+  formatDate,
   formatPHP,
   newIdempotencyKey,
 } from "@/lib/utils";
@@ -35,10 +41,24 @@ import { Dialog } from "@/components/ui/dialog";
 import { Field, Input, Select } from "@/components/ui/form";
 import { EmptyState, Skeleton } from "@/components/ui/helpers";
 
+type BatchMode = "auto" | "choose";
+
 interface CartLine {
   product: ProductStock;
+  batchItemId: string | null;
+  batchNumber: string | null;
+  unitPrice: number;
+  available: number;
   quantity: number;
 }
+
+const lineKey = (productId: string, batchItemId: string | null) =>
+  `${productId}:${batchItemId ?? "auto"}`;
+
+const readBatchMode = (): BatchMode => {
+  if (typeof window === "undefined") return "auto";
+  return window.localStorage.getItem("pos-batch-mode") === "choose" ? "choose" : "auto";
+};
 
 export default function PosPage() {
   const [search, setSearch] = useState("");
@@ -55,7 +75,12 @@ export default function PosPage() {
     reference: string | null;
     change: number;
   }>({ method: "cash", reference: null, change: 0 });
+  const [batchMode, setBatchMode] = useState<BatchMode>(readBatchMode);
+  const [pickerProduct, setPickerProduct] = useState<ProductStock | null>(null);
+  const [pickerBatchId, setPickerBatchId] = useState("");
+  const [pickerQty, setPickerQty] = useState("1");
   const searchRef = useRef<HTMLInputElement>(null);
+  const queryClient = useQueryClient();
   const { profile } = useAuth();
 
   const productsQuery = useQuery({
@@ -80,6 +105,18 @@ export default function PosPage() {
     staleTime: 5 * 60 * 1000,
   });
 
+  const batchOptionsQuery = useQuery({
+    queryKey: ["product-batches", pickerProduct?.id],
+    queryFn: () => productsService.batches(pickerProduct!.id),
+    enabled: Boolean(pickerProduct),
+  });
+
+  const batchOptions: ProductBatchOption[] = batchOptionsQuery.data ?? [];
+  const selectedBatch =
+    batchOptions.find((batch) => batch.batch_item_id === pickerBatchId) ??
+    batchOptions[0] ??
+    null;
+
   const products = useMemo(
     () =>
       (productsQuery.data?.items ?? []).filter(
@@ -91,7 +128,7 @@ export default function PosPage() {
   const lines = Object.values(cart);
   const itemCount = lines.reduce((sum, line) => sum + line.quantity, 0);
   const subtotal = lines.reduce(
-    (sum, line) => sum + line.quantity * Number(line.product.selling_price),
+    (sum, line) => sum + line.quantity * line.unitPrice,
     0,
   );
   const total = subtotal;
@@ -99,36 +136,104 @@ export default function PosPage() {
   const change = Math.max(0, receivedNumber - total);
   const canCheckout = lines.length > 0 && receivedNumber >= total && total > 0;
 
-  const addToCart = (product: ProductStock) => {
-    if (product.stock_qty <= 0) {
+  const updateBatchMode = (mode: BatchMode) => {
+    setBatchMode(mode);
+    window.localStorage.setItem("pos-batch-mode", mode);
+  };
+
+  const openBatchPicker = (product: ProductStock) => {
+    setPickerProduct(product);
+    setPickerBatchId("");
+    setPickerQty("1");
+  };
+
+  const addToCart = (
+    product: ProductStock,
+    batch?: {
+      batchItemId: string | null;
+      batchNumber: string | null;
+      unitPrice: number;
+      available: number;
+    },
+    quantity = 1,
+  ) => {
+    const spec = batch ?? {
+      batchItemId: null,
+      batchNumber: null,
+      unitPrice: Number(product.selling_price),
+      available: product.stock_qty,
+    };
+
+    if (spec.available <= 0) {
       toast.error("Out of stock");
       return;
     }
 
+    const key = lineKey(product.id, spec.batchItemId);
+
     setCart((current) => {
-      const existing = current[product.id];
-      const nextQuantity = (existing?.quantity ?? 0) + 1;
-      if (nextQuantity > product.stock_qty) {
-        toast.error(`Only ${product.stock_qty} in stock`);
+      const existing = current[key];
+      const nextQuantity = (existing?.quantity ?? 0) + quantity;
+      if (nextQuantity > spec.available) {
+        toast.error(`Only ${spec.available} available from this batch`);
         return current;
       }
-      return { ...current, [product.id]: { product, quantity: nextQuantity } };
+      return {
+        ...current,
+        [key]: {
+          product,
+          batchItemId: spec.batchItemId,
+          batchNumber: spec.batchNumber,
+          unitPrice: spec.unitPrice,
+          available: spec.available,
+          quantity: nextQuantity,
+        },
+      };
     });
   };
 
-  const setQuantity = (productId: string, quantity: number) => {
+  const addPickedBatch = () => {
+    if (!pickerProduct || !selectedBatch) return;
+
+    const quantity = Math.min(
+      Math.max(1, Math.floor(Number(pickerQty) || 1)),
+      selectedBatch.remaining_quantity,
+    );
+
+    addToCart(
+      pickerProduct,
+      {
+        batchItemId: selectedBatch.batch_item_id,
+        batchNumber: selectedBatch.batch_number,
+        unitPrice: Number(selectedBatch.selling_price),
+        available: selectedBatch.remaining_quantity,
+      },
+      quantity,
+    );
+    setPickerProduct(null);
+  };
+
+  const onProductClick = (product: ProductStock) => {
+    if (batchMode === "choose") {
+      openBatchPicker(product);
+      return;
+    }
+    addToCart(product);
+  };
+
+  const setQuantity = (key: string, quantity: number) => {
     setCart((current) => {
-      const line = current[productId];
+      const line = current[key];
       if (!line) return current;
       if (quantity <= 0) {
-        const { [productId]: _removed, ...rest } = current;
+        const { [key]: _removed, ...rest } = current;
         return rest;
       }
-      if (quantity > line.product.stock_qty) {
-        toast.error(`Only ${line.product.stock_qty} in stock`);
+      if (quantity > line.available) {
+        toast.error(`Only ${line.available} available`);
         return current;
       }
-      return { ...current, [productId]: { ...line, quantity } };
+      return { ...current, [key]: { ...line, quantity } };
     });
   };
 
@@ -144,7 +249,11 @@ export default function PosPage() {
 
     if (match) {
       event.preventDefault();
-      addToCart(match);
+      if (batchMode === "choose") {
+        openBatchPicker(match);
+      } else {
+        addToCart(match);
+      }
       setSearch("");
       searchRef.current?.focus();
     } else {
@@ -160,6 +269,7 @@ export default function PosPage() {
         items: lines.map((line) => ({
           product_id: line.product.id,
           quantity: line.quantity,
+          batch_item_id: line.batchItemId,
         })),
         payment: {
           method,
@@ -181,6 +291,8 @@ export default function PosPage() {
       setCustomerId("");
       setIdempotencyKey(newIdempotencyKey());
       void productsQuery.refetch();
+      void queryClient.invalidateQueries({ queryKey: ["product-batches"] });
+      void queryClient.invalidateQueries({ queryKey: ["batches"] });
       toast.success(`Sale ${result.transaction_number} completed`);
     },
     onError: (error) => toast.error(errorMessage(error)),
@@ -207,10 +319,39 @@ export default function PosPage() {
               Scan a barcode or search for a product to start.
             </p>
           </div>
-          <Badge tone="accent">
-            <ShoppingCart className="h-3 w-3" />
-            {itemCount} item{itemCount === 1 ? "" : "s"}
-          </Badge>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center rounded-lg border border-line bg-surface-2 p-0.5">
+              <button
+                type="button"
+                onClick={() => updateBatchMode("auto")}
+                className={cn(
+                  "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                  batchMode === "auto"
+                    ? "bg-accent text-[#04120a]"
+                    : "text-muted hover:text-foreground",
+                )}
+              >
+                Auto (FIFO)
+              </button>
+              <button
+                type="button"
+                onClick={() => updateBatchMode("choose")}
+                className={cn(
+                  "inline-flex items-center gap-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                  batchMode === "choose"
+                    ? "bg-accent text-[#04120a]"
+                    : "text-muted hover:text-foreground",
+                )}
+              >
+                <Layers className="h-3.5 w-3.5" />
+                Choose batch
+              </button>
+            </div>
+            <Badge tone="accent">
+              <ShoppingCart className="h-3 w-3" />
+              {itemCount} item{itemCount === 1 ? "" : "s"}
+            </Badge>
+          </div>
         </div>
 
         <div className="relative">
@@ -249,11 +390,13 @@ export default function PosPage() {
         ) : (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {products.map((product) => {
-              const inCart = cart[product.id]?.quantity ?? 0;
+              const inCart = lines
+                .filter((line) => line.product.id === product.id)
+                .reduce((sum, line) => sum + line.quantity, 0);
               return (
                 <button
                   key={product.id}
-                  onClick={() => addToCart(product)}
+                  onClick={() => onProductClick(product)}
                   className="group flex flex-col rounded-xl border border-line bg-surface p-4 text-left transition-colors hover:border-accent/40 hover:bg-surface-hover"
                 >
                   <div className="flex w-full items-start justify-between gap-2">
@@ -306,43 +449,51 @@ export default function PosPage() {
             />
           ) : (
             <div className="divide-y divide-line/70">
-              {lines.map((line) => (
-                <div key={line.product.id} className="flex gap-3 p-3">
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">{line.product.name}</p>
-                    <p className="truncate text-[11px] text-muted">
-                      {formatPHP(line.product.selling_price)} each
-                    </p>
+              {lines.map((line) => {
+                const key = lineKey(line.product.id, line.batchItemId);
+                return (
+                  <div key={key} className="flex gap-3 p-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">{line.product.name}</p>
+                      <p className="truncate text-[11px] text-muted">
+                        {formatPHP(line.unitPrice)} each
+                      </p>
+                      {line.batchNumber ? (
+                        <p className="mt-1 text-[10px] uppercase tracking-wide text-accent">
+                          Batch {line.batchNumber}
+                        </p>
+                      ) : null}
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="secondary"
+                        size="icon"
+                        className="h-7 w-7"
+                        onClick={() => setQuantity(key, line.quantity - 1)}
+                      >
+                        <Minus className="h-3 w-3" />
+                      </Button>
+                      <span className="tabular w-6 text-center text-sm">{line.quantity}</span>
+                      <Button
+                        variant="secondary"
+                        size="icon"
+                        className="h-7 w-7"
+                        onClick={() => setQuantity(key, line.quantity + 1)}
+                      >
+                        <Plus className="h-3 w-3" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7"
+                        onClick={() => setQuantity(key, 0)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1">
-                    <Button
-                      variant="secondary"
-                      size="icon"
-                      className="h-7 w-7"
-                      onClick={() => setQuantity(line.product.id, line.quantity - 1)}
-                    >
-                      <Minus className="h-3 w-3" />
-                    </Button>
-                    <span className="tabular w-6 text-center text-sm">{line.quantity}</span>
-                    <Button
-                      variant="secondary"
-                      size="icon"
-                      className="h-7 w-7"
-                      onClick={() => setQuantity(line.product.id, line.quantity + 1)}
-                    >
-                      <Plus className="h-3 w-3" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7"
-                      onClick={() => setQuantity(line.product.id, 0)}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -423,6 +574,99 @@ export default function PosPage() {
           ) : null}
         </CardContent>
       </Card>
+
+      <Dialog
+        open={Boolean(pickerProduct)}
+        onClose={() => setPickerProduct(null)}
+        title="Choose batch"
+        description={
+          pickerProduct
+            ? [pickerProduct.name, pickerProduct.brand, pickerProduct.flavor]
+                .filter(Boolean)
+                .join(" · ")
+            : undefined
+        }
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setPickerProduct(null)}>
+              Cancel
+            </Button>
+            <Button
+              disabled={!selectedBatch || batchOptionsQuery.isLoading}
+              onClick={addPickedBatch}
+            >
+              <Plus className="h-4 w-4" />
+              Add to cart
+            </Button>
+          </>
+        }
+      >
+        {batchOptionsQuery.isLoading ? (
+          <Skeleton className="h-32" />
+        ) : batchOptionsQuery.isError ? (
+          <EmptyState
+            icon={<Layers className="h-5 w-5" />}
+            title="Unable to load batches"
+            description={errorMessage(batchOptionsQuery.error)}
+          />
+        ) : batchOptions.length === 0 ? (
+          <EmptyState
+            icon={<Layers className="h-5 w-5" />}
+            title="No batches available"
+            description="This product has no sellable stock right now."
+          />
+        ) : (
+          <div className="space-y-3">
+            <div className="space-y-2">
+              {batchOptions.map((batch) => {
+                const active = selectedBatch?.batch_item_id === batch.batch_item_id;
+                return (
+                  <button
+                    key={batch.batch_item_id}
+                    type="button"
+                    onClick={() => setPickerBatchId(batch.batch_item_id)}
+                    className={cn(
+                      "flex w-full items-center justify-between gap-3 rounded-lg border p-3 text-left transition-colors",
+                      active
+                        ? "border-accent/50 bg-accent/5"
+                        : "border-line bg-surface-2/40 hover:bg-surface-hover",
+                    )}
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">{batch.batch_number}</p>
+                      <p className="text-[11px] text-muted">
+                        Received {formatDate(batch.date_received)} ·{" "}
+                        {batch.remaining_quantity} left
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="tabular text-sm font-semibold">
+                        {formatPHP(batch.selling_price)}
+                      </p>
+                      <p className="text-[11px] text-muted">per unit</p>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            <Field label="Quantity">
+              <Input
+                type="number"
+                min="1"
+                max={selectedBatch?.remaining_quantity ?? 1}
+                value={pickerQty}
+                onChange={(event) => setPickerQty(event.target.value)}
+              />
+            </Field>
+            {selectedBatch ? (
+              <p className="text-[11px] text-muted">
+                {selectedBatch.remaining_quantity} available in this batch.
+              </p>
+            ) : null}
+          </div>
+        )}
+      </Dialog>
 
       <Dialog
         open={Boolean(receipt)}

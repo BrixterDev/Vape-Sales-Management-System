@@ -11,6 +11,7 @@ import {
   inventorySummary,
   listBrands,
   listMovements,
+  listProductBatches,
   listStock,
   setArchived,
   updateProduct,
@@ -66,6 +67,11 @@ export const movements: RequestHandler = async (req, res) => {
   const auth = authOf(req);
   const { limit } = validated<{ limit: number }>(req, "query");
   res.json(await listMovements(auth.db, req.params.id as string, limit));
+};
+
+export const batches: RequestHandler = async (req, res) => {
+  const auth = authOf(req);
+  res.json(await listProductBatches(auth.db, req.params.id as string));
 };
 
 export const summary: RequestHandler = async (req, res) => {

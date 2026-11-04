@@ -1,6 +1,7 @@
 import type {
   Brand,
   Product,
+  ProductBatchOption,
   ProductInput,
   ProductStock,
   ProductUpdateInput,
@@ -46,6 +47,9 @@ export const productsService = {
 
   movements: (id: string) =>
     api.get<StockMovement[]>(`/products/${id}/movements`),
+
+  batches: (id: string) =>
+    api.get<ProductBatchOption[]>(`/products/${id}/batches`),
 
   summary: () => api.get<InventorySummary>("/products/summary"),
 

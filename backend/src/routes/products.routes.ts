@@ -27,6 +27,7 @@ productsRouter.get(
   validate(movementsQuerySchema, "query"),
   controller.movements,
 );
+productsRouter.get("/:id/batches", controller.batches);
 
 productsRouter.post("/", managerOnly, validate(productSchema), controller.store);
 productsRouter.patch("/:id", managerOnly, validate(productUpdateSchema), controller.update);

@@ -68,7 +68,7 @@ export const productSchema = z.object({
 
 export const productUpdateSchema = productSchema.partial();
 
-const queryBoolean = z
+export const queryBoolean = z
   .union([z.boolean(), z.enum(["true", "false"])])
   .transform((value) => value === true || value === "true")
   .optional();
@@ -113,6 +113,10 @@ export const batchSchema = z.object({
   date_received: z.string().min(10).max(10),
   notes: optionalText,
   items: z.array(batchItemSchema).min(1, "A batch needs at least one product"),
+});
+
+export const batchArchiveSchema = z.object({
+  archived: z.boolean(),
 });
 
 export const adjustStockSchema = z.object({
