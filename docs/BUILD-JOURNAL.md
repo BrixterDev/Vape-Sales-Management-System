@@ -6,7 +6,7 @@ and the rules to carry into the next project.
 > Audience: future you, and anyone starting a similar PERN / Supabase + Vercel app.
 > Read section 6 and 7 before starting a new system.
 >
-> Last updated: 2026-11-03
+> Last updated: 2026-11-04
 
 ---
 
@@ -74,7 +74,7 @@ vape-store/
     src/lib/supabase.ts   # browser client (anon key only)
     src/pages|components|services|contexts/
   supabase/
-    migrations/           # schema, functions, RLS, views (10 migrations)
+    migrations/           # schema, functions, RLS, views (14 migrations)
     tests/smoke.sql       # transactional DB test suite
   .github/workflows/ci.yml
   docs/BUILD-JOURNAL.md
@@ -87,8 +87,9 @@ Tables: `profiles`, `brands`, `products`, `suppliers`, `batches`, `batch_items`,
 `stock_movements`, `audit_logs`, `idempotency_keys`, `settings`.
 
 Key RPCs: `create_sale`, `edit_sale`, `void_sale`, `add_payment`, `adjust_stock`,
-`create_batch`, `update_sale_details`, `best_sellers`, `sales_report`,
-`dashboard_metrics`, `outstanding_report`, `cashier_performance`.
+`create_batch`, `delete_batch`, `update_sale_details`, `best_sellers`, `sales_report`,
+`dashboard_metrics`, `outstanding_report`, `cashier_performance`,
+`pos_active_batches`, `pos_batch_items`.
 
 Key views: `v_product_stock` (definer, quantities only), `v_product_stock_costs`
 (RLS-protected), `v_batch_summary`, `v_sale_balances`, `v_customer_balances`,
@@ -590,4 +591,131 @@ post-deployment fixes. Everything below is already in `main`.
 - Add the SQL smoke tests to CI.
 - Add an ESLint flat config (currently `lint` is a typecheck alias).
 - Route-level code splitting (the bundle is still ~1.1 MB).
+
+---
+
+## 10. Change log - 2026-11-04
+
+The day batch management became real: owner-controlled permanent batch deletion,
+automatic purge of sold-out batches, and a batch-first POS flow that went through
+one design reversal before landing.
+
+### 10.1 Commits
+
+| Time | Commit | Change |
+|---|---|---|
+| 22:13 | `0b8789b` | POS batch selection + soft-archive batch model |
+| 22:14 | `d7eb7c6` | Consistent "Archived" labels on the batches page |
+| 22:26 | `ba6c134` | Hard delete batches; auto-purge sold-out batches |
+| 23:25 | `75bdd0b` | Batch-first POS: pick a batch, then sell only its items |
+| 23:31 | `8fb779c` | POS batches as a filterable horizontal button row |
+
+### 10.2 Feature - POS batch selection (`0b8789b`)
+
+- Added a global **Auto (FIFO) / Choose batch** toggle on the POS, persisted per
+  browser in `localStorage` (`pos-batch-mode`) and available to all signed-in staff
+  (owner, manager, cashier).
+- The first version opened a per-product dialog listing that product's available
+  batches and let the cashier pick a quantity. Cart lines became keyed by
+  `productId:batchItemId|auto`, so the same product from two batches stayed two lines.
+- Checkout sends the pinned `batch_item_id`; pricing comes from the chosen batch.
+  `create_sale` already supported pinned batch items, so no transaction rewrite was
+  needed.
+- Added a cashier-safe `product_available_batches(uuid)` definer RPC and
+  `GET /products/:id/batches`; supplier cost was deliberately excluded.
+- Added owner-only soft archive (columns, trigger, endpoint, UI) as the first deletion
+  model. Superseded later the same day.
+
+### 10.3 Decision reversal - permanent batch deletion (`ba6c134`)
+
+- **Request:** the owner wanted to delete a batch for real, including its items, even
+  when it had sales history. Archiving was not enough.
+- **Schema:**
+  - `sale_item_allocations.batch_item_id` is now nullable with
+    `ON DELETE SET NULL`. Sale quantities, prices, costs, payments and profit survive;
+    only the pointer to the deleted batch item is lost.
+  - The archive columns, trigger, view field, index, endpoint and UI were removed.
+- **Manual delete:** owner-only `delete_batch(uuid)` RPC. It writes off any remaining
+  stock through `stock_movements` (`reason = 'Batch <number> deleted'`) and then deletes
+  the batch; `batch_items` cascade.
+  - `DELETE /batches/:id` is owner-only. Managers can view batches but get 403 on delete.
+  - No delete control exists on POS, Inventory, Sales, Dashboard or Reports.
+- **Automatic purge:** a deferred constraint trigger
+  `batch_items_auto_delete` (`DEFERRABLE INITIALLY DEFERRED`) calls
+  `auto_delete_empty_batch()` at commit. A batch whose items all reach zero is deleted
+  permanently, with no leftover empty rows.
+  - It **must** be deferred: `create_sale` decrements `batch_items` before inserting
+    `sale_item_allocations`. An immediate trigger would delete the row the allocation is
+    about to reference.
+- **Batches page:** permanent-delete confirmation states that items are removed, units
+  are written off, and history links are detached. The Archived toggle and Restore
+  action were removed.
+- **Verified in rolled-back transactions:** auto-purge removed the batch and its items
+  and detached 23 allocations; manual delete reported `10 items, 50 units written off`
+  and logged 10 stock movements.
+- **Lesson:** choose the deletion lifecycle before building UI around it. Soft archive
+  and hard delete are different products, not a flag. When history must survive a hard
+  delete, make the historical FK nullable and `SET NULL` instead of cascading.
+
+### 10.4 Feature - batch-first Choose batch (`75bdd0b`)
+
+- **Request:** instead of picking a batch per product, the owner wanted to pick one of
+  the current batches and then see only the items inside it.
+- Replaced the per-product dialog with a batch-first flow:
+  1. Choose batch mode shows the current batches with stock.
+  2. Selecting one filters the product grid to that batch's items, at that batch's
+     price and remaining quantity.
+  3. Clicking adds directly to the cart, pinned to that batch.
+- Two new cashier-safe definer RPCs replaced the per-product one:
+  - `pos_active_batches()` - batch number, date received, units left, item count.
+  - `pos_batch_items(batch_id)` - product identity, barcode, remaining quantity and
+    selling price. No `supplier_price`.
+- New endpoints `GET /products/batches` and `GET /products/batches/:batchId/items`;
+  both are authenticated and cashier-accessible. The old
+  `GET /products/:id/batches` and `product_available_batches()` were removed.
+- Barcode/SKU scanning in choose mode searches only the selected batch and asks for a
+  batch first when none is selected.
+- After checkout the batch queries are invalidated. If the sale emptied the batch, the
+  auto-purge removes it and the selected-batch effect resets the picker.
+- Migration `20261105000014` filters archived products out of `pos_active_batches()` so
+  the batch counts match the item list exactly.
+
+### 10.5 UI - filterable batch button row (`8fb779c`)
+
+- **Request:** the batch dropdown does not scale when there are many batches.
+- Replaced the `<select>` with a single horizontally scrolling row of batch buttons:
+  batch number, units left, item count and date received. The selected button gets the
+  accent border and a check icon.
+- Added a **Filter batches…** input (matches batch number and received date, including
+  the formatted date) and a batch-count badge.
+- The row never wraps, so a long batch list cannot push the product grid down. Filtering
+  only hides buttons; it does not clear the current selection.
+- Empty filter results show "No batches match …" in the row area.
+- **Scope:** `frontend/src/pages/pos/PosPage.tsx` only. No backend or schema changes.
+
+### 10.6 Migrations applied
+
+| Migration | Purpose |
+|---|---|
+| `20261104000011_pos_batch_selection.sql` | POS batch options + initial soft-archive model (later superseded) |
+| `20261105000012_hard_delete_batches.sql` | Nullable allocation FK, deferred auto-purge, `delete_batch()`, archive removal |
+| `20261105000013_pos_batch_first.sql` | `pos_active_batches()`, `pos_batch_items()`; dropped `product_available_batches()` |
+| `20261105000014_pos_active_batches_archived_products.sql` | Excludes archived products from the batch selector counts |
+
+### 10.7 Verified
+
+- `npm run typecheck` and `npm run build` pass after every step.
+- Live API checked with an owner JWT: batch list has no archive field, POS batch
+  endpoints return safe fields only, and the old archive route is gone.
+- Rolled-back DB tests covered manual delete, auto-purge, allocation detachment and
+  stock write-off movements.
+- Both migrations pushed to the linked Supabase project; no test data persisted.
+
+### 10.8 Still open after today
+
+- Rotate the exposed `service_role` key.
+- Add the SQL smoke tests to CI.
+- Add an ESLint flat config.
+- Route-level code splitting (bundle still ~1.1 MB).
+- Live smoke test of the deployed batch-first POS after the Vercel redeploy.
 
