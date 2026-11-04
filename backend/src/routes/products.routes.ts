@@ -21,13 +21,15 @@ productsRouter.get("/summary", controller.summary);
 productsRouter.get("/brands", controller.brands);
 productsRouter.post("/brands", managerOnly, validate(brandSchema), controller.storeBrand);
 
+productsRouter.get("/batches", controller.posBatches);
+productsRouter.get("/batches/:batchId/items", controller.posBatchItems);
+
 productsRouter.get("/:id", controller.show);
 productsRouter.get(
   "/:id/movements",
   validate(movementsQuerySchema, "query"),
   controller.movements,
 );
-productsRouter.get("/:id/batches", controller.batches);
 
 productsRouter.post("/", managerOnly, validate(productSchema), controller.store);
 productsRouter.patch("/:id", managerOnly, validate(productUpdateSchema), controller.update);

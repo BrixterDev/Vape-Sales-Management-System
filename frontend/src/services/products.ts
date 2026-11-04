@@ -1,7 +1,8 @@
 import type {
   Brand,
+  PosBatch,
+  PosBatchItem,
   Product,
-  ProductBatchOption,
   ProductInput,
   ProductStock,
   ProductUpdateInput,
@@ -48,8 +49,10 @@ export const productsService = {
   movements: (id: string) =>
     api.get<StockMovement[]>(`/products/${id}/movements`),
 
-  batches: (id: string) =>
-    api.get<ProductBatchOption[]>(`/products/${id}/batches`),
+  posBatches: () => api.get<PosBatch[]>("/products/batches"),
+
+  posBatchItems: (batchId: string) =>
+    api.get<PosBatchItem[]>(`/products/batches/${batchId}/items`),
 
   summary: () => api.get<InventorySummary>("/products/summary"),
 

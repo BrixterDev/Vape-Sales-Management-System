@@ -164,15 +164,20 @@ export async function createBrand(db: SupabaseClient, name: string) {
   return data;
 }
 
-export async function listProductBatches(
-  db: SupabaseClient,
-  productId: string,
-) {
-  const { data, error } = await db.rpc("product_available_batches", {
-    p_product_id: productId,
-  });
+export async function listPosBatches(db: SupabaseClient) {
+  const { data, error } = await db.rpc("pos_active_batches");
+  if (error) fail(error, "Unable to load batches");
+  return data ?? [];
+}
 
-  if (error) fail(error, "Unable to load batches for this product");
+export async function listPosBatchItems(
+  db: SupabaseClient,
+  batchId: string,
+) {
+  const { data, error } = await db.rpc("pos_batch_items", {
+    p_batch_id: batchId,
+  });
+  if (error) fail(error, "Unable to load batch items");
   return data ?? [];
 }
 

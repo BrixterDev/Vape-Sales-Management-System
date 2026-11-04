@@ -94,11 +94,24 @@ export interface BatchSummary {
   remaining_retail_value: number;
 }
 
-/** A batch item the POS can sell from. Never includes supplier cost. */
-export interface ProductBatchOption {
-  batch_item_id: string;
+/** A batch the POS can sell from. Never includes supplier cost. */
+export interface PosBatch {
+  batch_id: string;
   batch_number: string;
   date_received: string;
+  remaining_units: number;
+  item_count: number;
+}
+
+/** A single sellable batch item shown in the batch-first POS grid. */
+export interface PosBatchItem {
+  batch_item_id: string;
+  product_id: string;
+  sku: string;
+  barcode: string | null;
+  name: string;
+  brand: string | null;
+  flavor: string;
   remaining_quantity: number;
   selling_price: number;
 }

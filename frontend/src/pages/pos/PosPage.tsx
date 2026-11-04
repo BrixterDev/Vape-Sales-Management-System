@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -17,8 +17,8 @@ import {
 import { toast } from "sonner";
 import type {
   CreateSaleResult,
-  ProductBatchOption,
-  ProductStock,
+  PosBatch,
+  PosBatchItem,
 } from "@vape/shared";
 import { productsService } from "@/services/products";
 import { salesService } from "@/services/sales";
@@ -43,13 +43,30 @@ import { EmptyState, Skeleton } from "@/components/ui/helpers";
 
 type BatchMode = "auto" | "choose";
 
+interface CartProduct {
+  id: string;
+  name: string;
+  brand: string | null;
+  flavor: string;
+}
+
 interface CartLine {
-  product: ProductStock;
+  product: CartProduct;
   batchItemId: string | null;
   batchNumber: string | null;
   unitPrice: number;
   available: number;
   quantity: number;
+}
+
+interface PosGridItem {
+  key: string;
+  product: CartProduct;
+  price: number;
+  available: number;
+  lowStock: boolean;
+  batchItemId: string | null;
+  batchNumber: string | null;
 }
 
 const lineKey = (productId: string, batchItemId: string | null) =>
@@ -76,9 +93,7 @@ export default function PosPage() {
     change: number;
   }>({ method: "cash", reference: null, change: 0 });
   const [batchMode, setBatchMode] = useState<BatchMode>(readBatchMode);
-  const [pickerProduct, setPickerProduct] = useState<ProductStock | null>(null);
-  const [pickerBatchId, setPickerBatchId] = useState("");
-  const [pickerQty, setPickerQty] = useState("1");
+  const [selectedBatchId, setSelectedBatchId] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
   const { profile } = useAuth();
@@ -92,6 +107,7 @@ export default function PosPage() {
         search: debounced || undefined,
         inStock: true,
       }),
+    enabled: batchMode === "auto",
   });
 
   const customersQuery = useQuery({
@@ -105,17 +121,17 @@ export default function PosPage() {
     staleTime: 5 * 60 * 1000,
   });
 
-  const batchOptionsQuery = useQuery({
-    queryKey: ["product-batches", pickerProduct?.id],
-    queryFn: () => productsService.batches(pickerProduct!.id),
-    enabled: Boolean(pickerProduct),
+  const posBatchesQuery = useQuery({
+    queryKey: ["pos-batches"],
+    queryFn: productsService.posBatches,
+    enabled: batchMode === "choose",
   });
 
-  const batchOptions: ProductBatchOption[] = batchOptionsQuery.data ?? [];
-  const selectedBatch =
-    batchOptions.find((batch) => batch.batch_item_id === pickerBatchId) ??
-    batchOptions[0] ??
-    null;
+  const posBatchItemsQuery = useQuery({
+    queryKey: ["pos-batch-items", selectedBatchId],
+    queryFn: () => productsService.posBatchItems(selectedBatchId),
+    enabled: batchMode === "choose" && Boolean(selectedBatchId),
+  });
 
   const products = useMemo(
     () =>
@@ -124,6 +140,62 @@ export default function PosPage() {
       ),
     [productsQuery.data],
   );
+
+  const posBatches: PosBatch[] = posBatchesQuery.data ?? [];
+  const selectedBatch =
+    posBatches.find((batch) => batch.batch_id === selectedBatchId) ?? null;
+  const batchItems: PosBatchItem[] = selectedBatch
+    ? posBatchItemsQuery.data ?? []
+    : [];
+
+  useEffect(() => {
+    if (batchMode !== "choose" || !selectedBatchId) return;
+    if (
+      posBatchesQuery.data &&
+      !posBatchesQuery.data.some((batch) => batch.batch_id === selectedBatchId)
+    ) {
+      setSelectedBatchId("");
+    }
+  }, [batchMode, selectedBatchId, posBatchesQuery.data]);
+
+  const filteredBatchItems = useMemo(() => {
+    const term = debounced.trim().toLowerCase();
+    if (!term) return batchItems;
+    return batchItems.filter((item) =>
+      [item.name, item.sku, item.brand, item.flavor, item.barcode]
+        .filter(Boolean)
+        .some((value) => (value as string).toLowerCase().includes(term)),
+    );
+  }, [batchItems, debounced]);
+
+  const gridItems: PosGridItem[] = useMemo(() => {
+    if (batchMode === "choose") {
+      return filteredBatchItems.map((item) => ({
+        key: item.batch_item_id,
+        product: {
+          id: item.product_id,
+          name: item.name,
+          brand: item.brand,
+          flavor: item.flavor,
+        },
+        price: Number(item.selling_price),
+        available: item.remaining_quantity,
+        lowStock: false,
+        batchItemId: item.batch_item_id,
+        batchNumber: selectedBatch?.batch_number ?? null,
+      }));
+    }
+
+    return products.map((product) => ({
+      key: product.id,
+      product,
+      price: Number(product.selling_price),
+      available: product.stock_qty,
+      lowStock: product.is_low_stock,
+      batchItemId: null,
+      batchNumber: null,
+    }));
+  }, [batchMode, filteredBatchItems, products, selectedBatch]);
 
   const lines = Object.values(cart);
   const itemCount = lines.reduce((sum, line) => sum + line.quantity, 0);
@@ -141,15 +213,9 @@ export default function PosPage() {
     window.localStorage.setItem("pos-batch-mode", mode);
   };
 
-  const openBatchPicker = (product: ProductStock) => {
-    setPickerProduct(product);
-    setPickerBatchId("");
-    setPickerQty("1");
-  };
-
   const addToCart = (
-    product: ProductStock,
-    batch?: {
+    product: CartProduct,
+    spec: {
       batchItemId: string | null;
       batchNumber: string | null;
       unitPrice: number;
@@ -157,13 +223,6 @@ export default function PosPage() {
     },
     quantity = 1,
   ) => {
-    const spec = batch ?? {
-      batchItemId: null,
-      batchNumber: null,
-      unitPrice: Number(product.selling_price),
-      available: product.stock_qty,
-    };
-
     if (spec.available <= 0) {
       toast.error("Out of stock");
       return;
@@ -192,33 +251,13 @@ export default function PosPage() {
     });
   };
 
-  const addPickedBatch = () => {
-    if (!pickerProduct || !selectedBatch) return;
-
-    const quantity = Math.min(
-      Math.max(1, Math.floor(Number(pickerQty) || 1)),
-      selectedBatch.remaining_quantity,
-    );
-
-    addToCart(
-      pickerProduct,
-      {
-        batchItemId: selectedBatch.batch_item_id,
-        batchNumber: selectedBatch.batch_number,
-        unitPrice: Number(selectedBatch.selling_price),
-        available: selectedBatch.remaining_quantity,
-      },
-      quantity,
-    );
-    setPickerProduct(null);
-  };
-
-  const onProductClick = (product: ProductStock) => {
-    if (batchMode === "choose") {
-      openBatchPicker(product);
-      return;
-    }
-    addToCart(product);
+  const addGridItem = (item: PosGridItem) => {
+    addToCart(item.product, {
+      batchItemId: item.batchItemId,
+      batchNumber: item.batchNumber,
+      unitPrice: item.price,
+      available: item.available,
+    });
   };
 
   const setQuantity = (key: string, quantity: number) => {
@@ -242,18 +281,55 @@ export default function PosPage() {
     const term = search.trim().toLowerCase();
     if (!term) return;
 
+    event.preventDefault();
+
+    if (batchMode === "choose") {
+      if (!selectedBatch) {
+        toast.error("Select a batch first.");
+        return;
+      }
+
+      const item = batchItems.find(
+        (row) =>
+          row.barcode?.toLowerCase() === term || row.sku.toLowerCase() === term,
+      );
+
+      if (!item) {
+        toast.error("No matching item in the selected batch.");
+        return;
+      }
+
+      addToCart(
+        {
+          id: item.product_id,
+          name: item.name,
+          brand: item.brand,
+          flavor: item.flavor,
+        },
+        {
+          batchItemId: item.batch_item_id,
+          batchNumber: selectedBatch.batch_number,
+          unitPrice: Number(item.selling_price),
+          available: item.remaining_quantity,
+        },
+      );
+      setSearch("");
+      searchRef.current?.focus();
+      return;
+    }
+
     const match = products.find(
       (product) =>
         product.barcode?.toLowerCase() === term || product.sku.toLowerCase() === term,
     );
 
     if (match) {
-      event.preventDefault();
-      if (batchMode === "choose") {
-        openBatchPicker(match);
-      } else {
-        addToCart(match);
-      }
+      addToCart(match, {
+        batchItemId: null,
+        batchNumber: null,
+        unitPrice: Number(match.selling_price),
+        available: match.stock_qty,
+      });
       setSearch("");
       searchRef.current?.focus();
     } else {
@@ -291,7 +367,8 @@ export default function PosPage() {
       setCustomerId("");
       setIdempotencyKey(newIdempotencyKey());
       void productsQuery.refetch();
-      void queryClient.invalidateQueries({ queryKey: ["product-batches"] });
+      void queryClient.invalidateQueries({ queryKey: ["pos-batches"] });
+      void queryClient.invalidateQueries({ queryKey: ["pos-batch-items"] });
       void queryClient.invalidateQueries({ queryKey: ["batches"] });
       toast.success(`Sale ${result.transaction_number} completed`);
     },
@@ -362,63 +439,138 @@ export default function PosPage() {
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             onKeyDown={onSearchKeyDown}
-            placeholder="Scan barcode or search name, SKU, brand, flavor\u2026"
+            placeholder={
+              batchMode === "choose"
+                ? "Search items in the selected batch…"
+                : "Scan barcode or search name, SKU, brand, flavor…"
+            }
             className="h-12 pl-10 text-base"
           />
         </div>
 
-        {productsQuery.isLoading ? (
+        {batchMode === "choose" ? (
+          <div className="flex flex-wrap items-end gap-3 rounded-xl border border-line bg-surface p-3">
+            <Field label="Batch to sell from" className="min-w-[240px] flex-1">
+              <Select
+                value={selectedBatchId}
+                onChange={(event) => setSelectedBatchId(event.target.value)}
+              >
+                <option value="">Select a batch…</option>
+                {posBatches.map((batch) => (
+                  <option key={batch.batch_id} value={batch.batch_id}>
+                    {batch.batch_number} — {batch.remaining_units} unit
+                    {batch.remaining_units === 1 ? "" : "s"} —{" "}
+                    {formatDate(batch.date_received)}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            {selectedBatch ? (
+              <Badge tone="accent">
+                {selectedBatch.item_count} item
+                {selectedBatch.item_count === 1 ? "" : "s"} ·{" "}
+                {selectedBatch.remaining_units} unit
+                {selectedBatch.remaining_units === 1 ? "" : "s"} left
+              </Badge>
+            ) : null}
+          </div>
+        ) : null}
+
+        {batchMode === "choose" && posBatchesQuery.isLoading ? (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {Array.from({ length: 6 }).map((_, index) => (
               <Skeleton key={index} className="h-28" />
             ))}
           </div>
-        ) : products.length === 0 ? (
+        ) : batchMode === "choose" && posBatches.length === 0 ? (
+          <Card>
+            <EmptyState
+              icon={<Layers className="h-5 w-5" />}
+              title="No batches with stock"
+              description="Receive a batch to start selling from it."
+            />
+          </Card>
+        ) : batchMode === "choose" && !selectedBatch ? (
+          <Card>
+            <EmptyState
+              icon={<Layers className="h-5 w-5" />}
+              title="Select a batch"
+              description="Pick one of the current batches above to see only its items."
+            />
+          </Card>
+        ) : (batchMode === "choose" && posBatchItemsQuery.isLoading) ||
+          (batchMode === "auto" && productsQuery.isLoading) ? (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {Array.from({ length: 6 }).map((_, index) => (
+              <Skeleton key={index} className="h-28" />
+            ))}
+          </div>
+        ) : gridItems.length === 0 ? (
           <Card>
             <EmptyState
               icon={<Search className="h-5 w-5" />}
               title={
-                debounced.trim() ? "No in-stock products found" : "No products in stock"
+                batchMode === "choose"
+                  ? debounced.trim()
+                    ? "No items match"
+                    : "This batch has no items"
+                  : debounced.trim()
+                    ? "No in-stock products found"
+                    : "No products in stock"
               }
               description={
-                debounced.trim()
-                  ? "Nothing in stock matches that search. Out-of-stock items are hidden from POS."
-                  : "Receive a batch to start selling. Out-of-stock items are hidden from POS."
+                batchMode === "choose"
+                  ? "Only products inside the selected batch are shown."
+                  : debounced.trim()
+                    ? "Nothing in stock matches that search. Out-of-stock items are hidden from POS."
+                    : "Receive a batch to start selling. Out-of-stock items are hidden from POS."
               }
             />
           </Card>
         ) : (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {products.map((product) => {
+            {gridItems.map((item) => {
               const inCart = lines
-                .filter((line) => line.product.id === product.id)
+                .filter(
+                  (line) =>
+                    line.product.id === item.product.id &&
+                    line.batchItemId === item.batchItemId,
+                )
                 .reduce((sum, line) => sum + line.quantity, 0);
+
               return (
                 <button
-                  key={product.id}
-                  onClick={() => onProductClick(product)}
+                  key={item.key}
+                  onClick={() => addGridItem(item)}
                   className="group flex flex-col rounded-xl border border-line bg-surface p-4 text-left transition-colors hover:border-accent/40 hover:bg-surface-hover"
                 >
                   <div className="flex w-full items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">{product.name}</p>
+                      <p className="truncate text-sm font-medium">{item.product.name}</p>
                       <p className="truncate text-[11px] text-muted">
-                        {[product.brand, product.flavor].filter(Boolean).join(" \u00b7 ")}
+                        {[item.product.brand, item.product.flavor]
+                          .filter(Boolean)
+                          .join(" · ")}
                       </p>
+                      {item.batchNumber ? (
+                        <p className="mt-1 text-[10px] uppercase tracking-wide text-accent">
+                          Batch {item.batchNumber}
+                        </p>
+                      ) : null}
                     </div>
                     {inCart > 0 ? <Badge tone="accent">{inCart}</Badge> : null}
                   </div>
                   <div className="mt-auto flex w-full items-end justify-between pt-3">
                     <p className="tabular text-base font-semibold text-accent">
-                      {formatPHP(product.selling_price)}
+                      {formatPHP(item.price)}
                     </p>
                     <p
                       className={cn(
                         "text-[11px]",
-                        product.is_low_stock ? "text-warning" : "text-muted",
+                        item.lowStock ? "text-warning" : "text-muted",
                       )}
                     >
-                      {product.stock_qty} in stock
+                      {item.available} {batchMode === "choose" ? "left" : "in stock"}
                     </p>
                   </div>
                 </button>
@@ -574,99 +726,6 @@ export default function PosPage() {
           ) : null}
         </CardContent>
       </Card>
-
-      <Dialog
-        open={Boolean(pickerProduct)}
-        onClose={() => setPickerProduct(null)}
-        title="Choose batch"
-        description={
-          pickerProduct
-            ? [pickerProduct.name, pickerProduct.brand, pickerProduct.flavor]
-                .filter(Boolean)
-                .join(" · ")
-            : undefined
-        }
-        footer={
-          <>
-            <Button variant="secondary" onClick={() => setPickerProduct(null)}>
-              Cancel
-            </Button>
-            <Button
-              disabled={!selectedBatch || batchOptionsQuery.isLoading}
-              onClick={addPickedBatch}
-            >
-              <Plus className="h-4 w-4" />
-              Add to cart
-            </Button>
-          </>
-        }
-      >
-        {batchOptionsQuery.isLoading ? (
-          <Skeleton className="h-32" />
-        ) : batchOptionsQuery.isError ? (
-          <EmptyState
-            icon={<Layers className="h-5 w-5" />}
-            title="Unable to load batches"
-            description={errorMessage(batchOptionsQuery.error)}
-          />
-        ) : batchOptions.length === 0 ? (
-          <EmptyState
-            icon={<Layers className="h-5 w-5" />}
-            title="No batches available"
-            description="This product has no sellable stock right now."
-          />
-        ) : (
-          <div className="space-y-3">
-            <div className="space-y-2">
-              {batchOptions.map((batch) => {
-                const active = selectedBatch?.batch_item_id === batch.batch_item_id;
-                return (
-                  <button
-                    key={batch.batch_item_id}
-                    type="button"
-                    onClick={() => setPickerBatchId(batch.batch_item_id)}
-                    className={cn(
-                      "flex w-full items-center justify-between gap-3 rounded-lg border p-3 text-left transition-colors",
-                      active
-                        ? "border-accent/50 bg-accent/5"
-                        : "border-line bg-surface-2/40 hover:bg-surface-hover",
-                    )}
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">{batch.batch_number}</p>
-                      <p className="text-[11px] text-muted">
-                        Received {formatDate(batch.date_received)} ·{" "}
-                        {batch.remaining_quantity} left
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <p className="tabular text-sm font-semibold">
-                        {formatPHP(batch.selling_price)}
-                      </p>
-                      <p className="text-[11px] text-muted">per unit</p>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-
-            <Field label="Quantity">
-              <Input
-                type="number"
-                min="1"
-                max={selectedBatch?.remaining_quantity ?? 1}
-                value={pickerQty}
-                onChange={(event) => setPickerQty(event.target.value)}
-              />
-            </Field>
-            {selectedBatch ? (
-              <p className="text-[11px] text-muted">
-                {selectedBatch.remaining_quantity} available in this batch.
-              </p>
-            ) : null}
-          </div>
-        )}
-      </Dialog>
 
       <Dialog
         open={Boolean(receipt)}

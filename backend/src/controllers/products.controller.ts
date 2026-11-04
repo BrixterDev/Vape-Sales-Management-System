@@ -11,7 +11,8 @@ import {
   inventorySummary,
   listBrands,
   listMovements,
-  listProductBatches,
+  listPosBatchItems,
+  listPosBatches,
   listStock,
   setArchived,
   updateProduct,
@@ -69,9 +70,14 @@ export const movements: RequestHandler = async (req, res) => {
   res.json(await listMovements(auth.db, req.params.id as string, limit));
 };
 
-export const batches: RequestHandler = async (req, res) => {
+export const posBatches: RequestHandler = async (req, res) => {
   const auth = authOf(req);
-  res.json(await listProductBatches(auth.db, req.params.id as string));
+  res.json(await listPosBatches(auth.db));
+};
+
+export const posBatchItems: RequestHandler = async (req, res) => {
+  const auth = authOf(req);
+  res.json(await listPosBatchItems(auth.db, req.params.batchId as string));
 };
 
 export const summary: RequestHandler = async (req, res) => {
