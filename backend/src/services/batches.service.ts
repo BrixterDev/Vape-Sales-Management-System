@@ -1,7 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { BatchInput } from "@vape/shared";
 import { fail, pageRange, sanitizeSearch } from "../lib/db";
-import { ApiError } from "../lib/errors";
 
 export async function listBatches(
   db: SupabaseClient,
@@ -12,12 +11,9 @@ export async function listBatches(
     supplierId?: string;
     from?: string;
     to?: string;
-    archived?: boolean;
   },
 ) {
   let query = db.from("v_batch_summary").select("*", { count: "exact" });
-
-  query = query.eq("is_archived", params.archived ?? false);
 
   const term = sanitizeSearch(params.search);
   if (term) {
@@ -53,7 +49,7 @@ export async function getBatch(db: SupabaseClient, id: string) {
   const { data: batch, error } = await db
     .from("batches")
     .select(
-      "id, batch_number, supplier_id, date_received, notes, created_by, created_at, is_archived, archive_reason, archived_at, archived_by, suppliers(name), profiles(full_name)",
+      "id, batch_number, supplier_id, date_received, notes, created_by, created_at, suppliers(name), profiles(full_name)",
     )
     .eq("id", id)
     .maybeSingle();
@@ -112,44 +108,8 @@ export async function createBatch(
   return data;
 }
 
-export async function setBatchArchived(
-  db: SupabaseClient,
-  id: string,
-  archived: boolean,
-  actorId: string,
-) {
-  if (archived) {
-    const { data: items, error: itemsError } = await db
-      .from("batch_items")
-      .select("remaining_quantity")
-      .eq("batch_id", id);
-
-    if (itemsError) fail(itemsError, "Unable to check batch stock");
-
-    const remaining = (items ?? []).reduce(
-      (sum, item) => sum + Number(item.remaining_quantity ?? 0),
-      0,
-    );
-
-    if (remaining > 0) {
-      throw ApiError.conflict(
-        `This batch still has ${remaining} unit${remaining === 1 ? "" : "s"} in stock. Sell or adjust them to zero before deleting it.`,
-      );
-    }
-  }
-
-  const { data, error } = await db
-    .from("batches")
-    .update({
-      is_archived: archived,
-      archive_reason: archived ? "manual" : null,
-      archived_at: archived ? new Date().toISOString() : null,
-      archived_by: archived ? actorId : null,
-    })
-    .eq("id", id)
-    .select()
-    .maybeSingle();
-
-  if (error) fail(error, "Unable to archive batch");
+export async function deleteBatch(db: SupabaseClient, id: string) {
+  const { data, error } = await db.rpc("delete_batch", { p_batch_id: id });
+  if (error) fail(error, "Unable to delete batch");
   return data;
 }

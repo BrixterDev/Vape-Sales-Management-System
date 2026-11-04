@@ -14,7 +14,7 @@ import type { Paginated } from "./products";
 export interface SaleDetailResponse extends SaleDetail {
   allocations: Array<{
     sale_item_id: string;
-    batch_item_id: string;
+    batch_item_id: string | null;
     quantity: number;
     unit_cost: number;
     unit_price: number;

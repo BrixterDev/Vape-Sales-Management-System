@@ -1,8 +1,6 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Archive,
-  ArchiveRestore,
   Boxes,
   ChevronRight,
   CircleDollarSign,
@@ -59,7 +57,6 @@ export default function BatchesPage() {
   const isOwner = profile?.role === "owner";
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
-  const [archived, setArchived] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<BatchSummary | null>(null);
   const debounced = useDebounced(search);
 
@@ -75,13 +72,12 @@ export default function BatchesPage() {
   const [flavorRows, setFlavorRows] = useState<FlavorRow[]>([{ ...blankFlavor }]);
 
   const listQuery = useQuery({
-    queryKey: ["batches", page, debounced, archived],
+    queryKey: ["batches", page, debounced],
     queryFn: () =>
       batchesService.list({
         page,
         pageSize: 20,
         search: debounced || undefined,
-        archived: archived || undefined,
       }),
   });
 
@@ -225,13 +221,20 @@ export default function BatchesPage() {
     onError: (error) => toast.error(errorMessage(error)),
   });
 
-  const archiveMutation = useMutation({
-    mutationFn: (input: { batch: BatchSummary; archived: boolean }) =>
-      batchesService.archive(input.batch.batch_id, input.archived),
-    onSuccess: (_batch, input) => {
-      toast.success(input.archived ? "Batch deleted" : "Batch restored");
+  const deleteMutation = useMutation({
+    mutationFn: (batch: BatchSummary) => batchesService.remove(batch.batch_id),
+    onSuccess: (result, batch) => {
+      toast.success(
+        result.units_written_off > 0
+          ? `Batch ${result.batch_number} deleted — ${result.items_deleted} item${
+              result.items_deleted === 1 ? "" : "s"
+            }, ${result.units_written_off} unit${
+              result.units_written_off === 1 ? "" : "s"
+            } written off`
+          : `Batch ${result.batch_number} deleted`,
+      );
       setPendingDelete(null);
-      if (input.archived && detail?.batch_id === input.batch.batch_id) {
+      if (detail?.batch_id === batch.batch_id) {
         setDetail(null);
       }
       void queryClient.invalidateQueries({ queryKey: ["batches"] });
@@ -241,6 +244,9 @@ export default function BatchesPage() {
       void queryClient.invalidateQueries({ queryKey: ["product-options"] });
       void queryClient.invalidateQueries({ queryKey: ["pos-products"] });
       void queryClient.invalidateQueries({ queryKey: ["product-batches"] });
+      void queryClient.invalidateQueries({ queryKey: ["movements"] });
+      void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      void queryClient.invalidateQueries({ queryKey: ["reports"] });
     },
     onError: (error) => toast.error(errorMessage(error)),
   });
@@ -268,16 +274,6 @@ export default function BatchesPage() {
             className="pl-9"
           />
         </div>
-        <Button
-          variant={archived ? "primary" : "secondary"}
-          onClick={() => {
-            setArchived((value) => !value);
-            setPage(1);
-          }}
-        >
-          <Archive className="h-4 w-4" />
-          Archived
-        </Button>
       </div>
 
       <TableWrap>
@@ -290,17 +286,9 @@ export default function BatchesPage() {
         ) : (listQuery.data?.items ?? []).length === 0 ? (
           <EmptyState
             icon={<Boxes className="h-5 w-5" />}
-            title={archived ? "No deleted batches" : "No batches yet"}
-            description={
-              archived
-                ? "Batches you delete, and batches that sell out, are kept here for history."
-                : "Receive your first batch to load stock into inventory."
-            }
-            action={
-              archived ? undefined : (
-                <Button onClick={() => setCreateOpen(true)}>Receive batch</Button>
-              )
-            }
+            title="No batches yet"
+            description="Receive your first batch to load stock into inventory."
+            action={<Button onClick={() => setCreateOpen(true)}>Receive batch</Button>}
           />
         ) : (
           <>
@@ -320,14 +308,7 @@ export default function BatchesPage() {
               <TBody>
                 {(listQuery.data?.items ?? []).map((batch) => (
                   <TR key={batch.batch_id}>
-                    <TD className="font-medium">
-                      {batch.batch_number}
-                      {batch.is_archived ? (
-                        <Badge tone="neutral" className="ml-2">
-                          Archived
-                        </Badge>
-                      ) : null}
-                    </TD>
+                    <TD className="font-medium">{batch.batch_number}</TD>
                     <TD className="text-muted">{batch.supplier ?? "—"}</TD>
                     <TD>{formatDate(batch.date_received)}</TD>
                     <TD className="tabular text-right">
@@ -342,35 +323,15 @@ export default function BatchesPage() {
                     <TD>
                       <div className="flex items-center justify-end gap-1">
                         {isOwner ? (
-                          batch.is_archived ? (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              title="Restore batch"
-                              disabled={archiveMutation.isPending}
-                              onClick={() =>
-                                archiveMutation.mutate({ batch, archived: false })
-                              }
-                            >
-                              <ArchiveRestore className="h-4 w-4" />
-                            </Button>
-                          ) : (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              title={
-                                batch.remaining_units > 0
-                                  ? "Sell or adjust the stock to zero before deleting"
-                                  : "Delete batch"
-                              }
-                              disabled={
-                                batch.remaining_units > 0 || archiveMutation.isPending
-                              }
-                              onClick={() => setPendingDelete(batch)}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          )
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            title="Delete batch"
+                            disabled={deleteMutation.isPending}
+                            onClick={() => setPendingDelete(batch)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
                         ) : null}
                         <Button variant="ghost" size="icon" onClick={() => setDetail(batch)}>
                           <ChevronRight className="h-4 w-4" />
@@ -610,10 +571,12 @@ export default function BatchesPage() {
       <Dialog
         open={Boolean(pendingDelete)}
         onClose={() => setPendingDelete(null)}
-        title="Delete batch?"
+        title="Delete batch permanently?"
         description={
           pendingDelete
-            ? `Batch ${pendingDelete.batch_number} will be removed from lists and the POS.`
+            ? `Batch ${pendingDelete.batch_number} and all ${pendingDelete.item_count} ${
+                pendingDelete.item_count === 1 ? "item" : "items"
+              } will be deleted.`
             : undefined
         }
         footer={
@@ -623,24 +586,31 @@ export default function BatchesPage() {
             </Button>
             <Button
               variant="danger"
-              disabled={archiveMutation.isPending}
+              disabled={deleteMutation.isPending}
               onClick={() =>
-                pendingDelete
-                  ? archiveMutation.mutate({ batch: pendingDelete, archived: true })
-                  : undefined
+                pendingDelete ? deleteMutation.mutate(pendingDelete) : undefined
               }
             >
-              {archiveMutation.isPending ? "Deleting…" : "Delete batch"}
+              {deleteMutation.isPending ? "Deleting…" : "Delete permanently"}
             </Button>
           </>
         }
       >
         <div className="space-y-2 text-sm text-muted">
+          {pendingDelete && pendingDelete.remaining_units > 0 ? (
+            <p className="text-warning">
+              {formatNumber(pendingDelete.remaining_units)} unit
+              {pendingDelete.remaining_units === 1 ? "" : "s"} still in stock will be
+              written off, reducing product stock.
+            </p>
+          ) : (
+            <p>This batch has no stock left.</p>
+          )}
           <p>
-            Sales, stock movements and profit history for this batch are kept, so reports
-            stay accurate.
+            Sale totals, payments and profit stay accurate, but this batch&apos;s link is
+            removed from sales history.
           </p>
-          <p>You can restore it any time from the Archived list.</p>
+          <p className="font-medium text-danger">This cannot be undone.</p>
         </div>
       </Dialog>
     </div>

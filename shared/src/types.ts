@@ -66,10 +66,6 @@ export interface Batch {
   notes: string | null;
   created_by: string | null;
   created_at: string;
-  is_archived: boolean;
-  archive_reason: "manual" | "sold_out" | null;
-  archived_at: string | null;
-  archived_by: string | null;
 }
 
 export interface BatchItem {
@@ -96,7 +92,6 @@ export interface BatchSummary {
   potential_revenue: number;
   potential_profit: number;
   remaining_retail_value: number;
-  is_archived: boolean;
 }
 
 /** A batch item the POS can sell from. Never includes supplier cost. */
@@ -137,7 +132,7 @@ export interface SaleItem {
 export interface SaleItemAllocation {
   id: string;
   sale_item_id: string;
-  batch_item_id: string;
+  batch_item_id: string | null;
   quantity: number;
   unit_cost: number;
   unit_price: number;

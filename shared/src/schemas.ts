@@ -115,10 +115,6 @@ export const batchSchema = z.object({
   items: z.array(batchItemSchema).min(1, "A batch needs at least one product"),
 });
 
-export const batchArchiveSchema = z.object({
-  archived: z.boolean(),
-});
-
 export const adjustStockSchema = z.object({
   batch_item_id: uuid,
   quantity_delta: z.coerce
