@@ -324,7 +324,7 @@ export default function BatchesPage() {
                       {batch.batch_number}
                       {batch.is_archived ? (
                         <Badge tone="neutral" className="ml-2">
-                          Deleted
+                          Archived
                         </Badge>
                       ) : null}
                     </TD>
