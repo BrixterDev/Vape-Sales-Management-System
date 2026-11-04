@@ -94,6 +94,7 @@ export default function PosPage() {
   }>({ method: "cash", reference: null, change: 0 });
   const [batchMode, setBatchMode] = useState<BatchMode>(readBatchMode);
   const [selectedBatchId, setSelectedBatchId] = useState("");
+  const [batchFilter, setBatchFilter] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
   const { profile } = useAuth();
@@ -144,6 +145,18 @@ export default function PosPage() {
   const posBatches: PosBatch[] = posBatchesQuery.data ?? [];
   const selectedBatch =
     posBatches.find((batch) => batch.batch_id === selectedBatchId) ?? null;
+
+  const filteredPosBatches = useMemo(() => {
+    const term = batchFilter.trim().toLowerCase();
+    if (!term) return posBatches;
+    return posBatches.filter(
+      (batch) =>
+        batch.batch_number.toLowerCase().includes(term) ||
+        batch.date_received.toLowerCase().includes(term) ||
+        formatDate(batch.date_received).toLowerCase().includes(term),
+    );
+  }, [batchFilter, posBatches]);
+
   const batchItems: PosBatchItem[] = selectedBatch
     ? posBatchItemsQuery.data ?? []
     : [];
@@ -449,30 +462,79 @@ export default function PosPage() {
         </div>
 
         {batchMode === "choose" ? (
-          <div className="flex flex-wrap items-end gap-3 rounded-xl border border-line bg-surface p-3">
-            <Field label="Batch to sell from" className="min-w-[240px] flex-1">
-              <Select
-                value={selectedBatchId}
-                onChange={(event) => setSelectedBatchId(event.target.value)}
-              >
-                <option value="">Select a batch…</option>
-                {posBatches.map((batch) => (
-                  <option key={batch.batch_id} value={batch.batch_id}>
-                    {batch.batch_number} — {batch.remaining_units} unit
-                    {batch.remaining_units === 1 ? "" : "s"} —{" "}
-                    {formatDate(batch.date_received)}
-                  </option>
+          <div className="rounded-xl border border-line bg-surface p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <p className="text-xs font-medium text-muted">Batch to sell from</p>
+                <Badge tone="neutral">
+                  {filteredPosBatches.length} batch
+                  {filteredPosBatches.length === 1 ? "" : "es"}
+                </Badge>
+              </div>
+              <div className="relative w-full sm:w-56">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted" />
+                <Input
+                  value={batchFilter}
+                  onChange={(event) => setBatchFilter(event.target.value)}
+                  placeholder="Filter batches…"
+                  className="h-9 pl-9 text-xs"
+                />
+              </div>
+            </div>
+
+            {posBatchesQuery.isLoading ? (
+              <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+                {Array.from({ length: 4 }).map((_, index) => (
+                  <Skeleton key={index} className="h-16 w-44 shrink-0" />
                 ))}
-              </Select>
-            </Field>
-            {selectedBatch ? (
-              <Badge tone="accent">
-                {selectedBatch.item_count} item
-                {selectedBatch.item_count === 1 ? "" : "s"} ·{" "}
-                {selectedBatch.remaining_units} unit
-                {selectedBatch.remaining_units === 1 ? "" : "s"} left
-              </Badge>
-            ) : null}
+              </div>
+            ) : posBatches.length === 0 ? (
+              <p className="mt-3 text-xs text-muted">
+                No batches with stock. Receive a batch to start selling.
+              </p>
+            ) : filteredPosBatches.length === 0 ? (
+              <p className="mt-3 text-xs text-muted">
+                No batches match “{batchFilter.trim()}”.
+              </p>
+            ) : (
+              <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+                {filteredPosBatches.map((batch) => {
+                  const active = batch.batch_id === selectedBatchId;
+                  return (
+                    <button
+                      key={batch.batch_id}
+                      type="button"
+                      aria-pressed={active}
+                      onClick={() => setSelectedBatchId(batch.batch_id)}
+                      className={cn(
+                        "flex min-w-[170px] shrink-0 flex-col items-start rounded-lg border px-3 py-2 text-left transition-colors",
+                        active
+                          ? "border-accent/60 bg-accent/10"
+                          : "border-line bg-surface-2/40 hover:border-accent/30 hover:bg-surface-hover",
+                      )}
+                    >
+                      <div className="flex w-full items-center justify-between gap-2">
+                        <span className="truncate text-xs font-semibold">
+                          {batch.batch_number}
+                        </span>
+                        {active ? (
+                          <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-accent" />
+                        ) : null}
+                      </div>
+                      <span className="mt-0.5 text-[11px] text-muted">
+                        {batch.remaining_units} unit
+                        {batch.remaining_units === 1 ? "" : "s"} ·{" "}
+                        {batch.item_count} item
+                        {batch.item_count === 1 ? "" : "s"}
+                      </span>
+                      <span className="text-[10px] text-muted/80">
+                        Received {formatDate(batch.date_received)}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
         ) : null}
 
@@ -482,20 +544,18 @@ export default function PosPage() {
               <Skeleton key={index} className="h-28" />
             ))}
           </div>
-        ) : batchMode === "choose" && posBatches.length === 0 ? (
-          <Card>
-            <EmptyState
-              icon={<Layers className="h-5 w-5" />}
-              title="No batches with stock"
-              description="Receive a batch to start selling from it."
-            />
-          </Card>
         ) : batchMode === "choose" && !selectedBatch ? (
           <Card>
             <EmptyState
               icon={<Layers className="h-5 w-5" />}
-              title="Select a batch"
-              description="Pick one of the current batches above to see only its items."
+              title={
+                posBatches.length === 0 ? "No batches with stock" : "Select a batch"
+              }
+              description={
+                posBatches.length === 0
+                  ? "Receive a batch to start selling from it."
+                  : "Pick one of the batches above to see only its items."
+              }
             />
           </Card>
         ) : (batchMode === "choose" && posBatchItemsQuery.isLoading) ||
