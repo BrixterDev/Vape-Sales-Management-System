@@ -6,7 +6,7 @@ and the rules to carry into the next project.
 > Audience: future you, and anyone starting a similar PERN / Supabase + Vercel app.
 > Read section 6 and 7 before starting a new system.
 >
-> Last updated: 2026-11-04
+> Last updated: 2026-11-06
 
 ---
 
@@ -718,4 +718,62 @@ one design reversal before landing.
 - Add an ESLint flat config.
 - Route-level code splitting (bundle still ~1.1 MB).
 - Live smoke test of the deployed batch-first POS after the Vercel redeploy.
+
+---
+
+## 11. Change log - 2026-11-06
+
+Branding: the shop's own artwork became the site logo. Frontend-only work - no
+backend, schema or shared-code changes.
+
+### 11.1 Commit
+
+| Time | Commit | Change |
+|---|---|---|
+| 00:42 | `a15bed2` | Vape Shop logo as favicon, social preview image and sidebar logo |
+
+### 11.2 Feature - site logo (`a15bed2`)
+
+- **Request:** use the shop's `website.png` artwork (the "Vape Shop" sticker with
+  vape devices and smoke) as the website image.
+- **Problem found first:** the app had **no favicon at all**. `frontend/public/` was
+  empty and `index.html` had no `<link rel="icon">`, so every browser tab showed the
+  default globe icon.
+- **Asset:** copied `website.png` (600x600 PNG) to `frontend/public/logo.png` and
+  committed that copy. The originals in the repo root (`website.png`,
+  `website image.jpg`) stay untracked and out of the repo.
+  - Vite serves `public/` at the site root and copies it into `dist/` on build, so
+    `/logo.png` resolves the same locally and in production.
+- **`frontend/index.html`:**
+  - `<link rel="icon" type="image/png" href="/logo.png">` - browser tab and bookmarks.
+  - `<link rel="apple-touch-icon" href="/logo.png">` - iOS home screen.
+  - Open Graph + Twitter card tags (`og:type`, `og:title`, `og:description`,
+    `og:image`, `twitter:card`, `twitter:image`) so shared links preview the logo.
+    The image URL is **absolute** (`https://vape-sales-management-system.vercel.app/logo.png`)
+    because several scrapers ignore relative `og:image`.
+  - Fixed a corrupted character in `<title>`: it contained a U+FFFD replacement
+    character (`Vape Store A Sales & Inventory`) and now reads
+    `Vape Store · Sales & Inventory`.
+  - `theme-color` untouched.
+- **`frontend/src/components/layout/Sidebar.tsx`:** replaced the generic `Boxes`
+  glyph in the sidebar header with `<img src="/logo.png">` at 32x32, rounded with a
+  `ring-1` border so the white artwork reads against the dark theme. The `Boxes`
+  import is still used by the Batches nav item.
+- **Verified:** `npm run typecheck` and `npm run build` pass; `dist/logo.png` is in the
+  build output and the built `index.html` contains the icon, apple-touch and social
+  tags.
+- **Lesson:** ship the favicon in the first deploy - a missing one is invisible in
+  screenshots and easy to forget. Put brand assets in `public/` and reference them
+  with a root-absolute path so they survive the build. Favicons are cached hard by
+  browsers, so expect to hard-refresh after a deploy.
+
+### 11.3 Still open after today
+
+- Rotate the exposed `service_role` key.
+- Add the SQL smoke tests to CI.
+- Add an ESLint flat config.
+- Route-level code splitting (bundle still ~1.1 MB).
+- Live smoke test of the deployed batch-first POS after the Vercel redeploy.
+- Optional branding follow-ups: logo on the login screen, a dedicated 512px square
+  crop for the OG image.
 
