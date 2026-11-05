@@ -65,9 +65,13 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
       >
         <div className="flex h-16 items-center justify-between gap-2 border-b border-line px-5">
           <div className="flex items-center gap-2.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent/15 text-accent">
-              <Boxes className="h-4 w-4" />
-            </div>
+            <img
+              src="/logo.png"
+              alt=""
+              width={32}
+              height={32}
+              className="h-8 w-8 rounded-lg object-cover ring-1 ring-line"
+            />
             <div className="leading-tight">
               <p className="text-sm font-semibold tracking-tight">Vape Store</p>
               <p className="text-[10px] uppercase tracking-widest text-muted">Inventory &amp; Sales</p>
