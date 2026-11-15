@@ -777,3 +777,70 @@ backend, schema or shared-code changes.
 - Optional branding follow-ups: logo on the login screen, a dedicated 512px square
   crop for the OG image.
 
+---
+
+## 12. Change log - 2026-11-15
+
+Mobile layout: removed page-level horizontal scrolling. Frontend/CSS-only - no
+API, schema or shared-code changes.
+
+### 12.1 Commit
+
+| Time | Commit | Change |
+|---|---|---|
+| - | `9dd41f4` | Prevent horizontal page scroll on mobile |
+
+### 12.2 Fix - mobile horizontal overflow (`9dd41f4`)
+
+- **Request:** on phones the whole page panned sideways.
+- **Root cause:** the content column (`<main>` in `AppLayout.tsx`) declared
+  `overflow-y-auto` only. Per CSS, setting one overflow axis to a non-`visible`
+  value makes the other axis compute to `auto` as well, so `<main>` silently
+  became a horizontal scroll container. Any content even a fraction wider than
+  the viewport (Recharts SVG edges, borders, long unbreakable strings) turned
+  into a full-page horizontal pan.
+- **Changes:**
+  - `AppLayout.tsx` - added `overflow-x-hidden` to `<main>`; vertical scroll is
+    unchanged.
+  - `index.css` - document-level safety net:
+    `html, body { overflow-x: hidden; overflow-x: clip; }` (`clip` avoids
+    creating a scroll container in modern browsers).
+  - `DashboardPage.tsx` / `BestSellersPage.tsx` - added `min-w-0` to the chart
+    Cards so a grid item's default `min-width: auto` cannot stretch the card
+    wider than its cell because of the Recharts SVG.
+  - `LoginPage.tsx` - password placeholder simplified from the escaped
+    `\u2022` sequence to `Password`.
+- **Kept intentionally:** data tables still scroll horizontally *inside* their
+  own `TableWrap` / `overflow-x-auto` containers. That is the correct mobile
+  pattern - swipe the table, not the page.
+- **Verified:** `npm run build` (shared, backend, frontend) passes, including
+  TypeScript. No browser automation is installed, so the final visual check is
+  on a real device.
+
+### 12.3 Ops - Supabase Preview repair
+
+- The 2026-11-06 viewer/demo-account experiment was rolled back: app code
+  restored to `8394bd5`, the two migrations deleted from the repo, and the demo
+  auth user removed.
+- Both migrations had already been applied to the remote database, so the
+  GitHub **Supabase Preview** check failed with
+  *"Remote migration versions not found in local migrations directory."*
+- Repaired the history table only:
+  `supabase migration repair --linked --status reverted 20261106000015 20261106000016`.
+  `supabase migration list --linked` now matches all 14 local migrations.
+- The remote schema keeps inert leftovers (the `viewer` enum value and the
+  money-masking function versions). PostgreSQL cannot drop an enum value, so
+  this is by design; nothing references the role.
+- Root images `website.png` and `website image.jpg` are design references and
+  are now listed in `.gitignore` instead of showing as untracked.
+
+### 12.4 Still open after today
+
+- Confirm Supabase Preview turns green on the next push.
+- Rotate the exposed `service_role` key.
+- Add the SQL smoke tests to CI.
+- Add an ESLint flat config.
+- Route-level code splitting (bundle still ~1.1 MB).
+- Live smoke test of the deployed batch-first POS.
+- Verify the mobile layout on a real device.
+

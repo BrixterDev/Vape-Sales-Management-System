@@ -39,3 +39,7 @@ supabase/.env
 coverage/
 playwright-report/
 test-results/
+
+# local design references (never committed)
+website image.jpg
+website.png
