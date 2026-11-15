@@ -35,3 +35,12 @@ jobs:
             echo "Service role reference found in frontend code"
             exit 1
           fi
+
+      - name: Guard against committed secrets
+        run: |
+          # Real JWTs or Supabase secret keys must never be committed.
+          if git grep -nE 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9|sb_secret_[A-Za-z0-9_-]{8,}' -- \
+            . ':(exclude)docs' ':(exclude).github/workflows/ci.yml' ':(exclude)*.example' ; then
+            echo "Potential secret found in tracked files"
+            exit 1
+          fi

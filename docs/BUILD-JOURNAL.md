@@ -834,10 +834,49 @@ API, schema or shared-code changes.
 - Root images `website.png` and `website image.jpg` are design references and
   are now listed in `.gitignore` instead of showing as untracked.
 
-### 12.4 Still open after today
+### 12.4 Security audit - service_role exposure
 
-- Confirm Supabase Preview turns green on the next push.
-- Rotate the exposed `service_role` key.
+Triggered by the standing "rotate the key" item (the key was pasted in chat
+during setup - see 4.20). Findings:
+
+- **Git history is clean.** `.env.vercel` has never been tracked
+  (`git log --all -- .env.vercel` is empty); `.gitignore`'s `.env.*` rule covers
+  it. Only `.env.example` templates are committed, and they contain no values.
+  `git log -S "SUPABASE_SERVICE_ROLE_KEY=eyJ"` returns nothing, so no real JWT
+  was ever committed.
+- **The deployed frontend is clean.** Fetched the production bundle
+  (`/assets/index-Bh2L1Y1Y.js`) and scanned for `service_role` /
+  `SUPABASE_SERVICE_ROLE_KEY`: 0 hits.
+- **The GitHub repo is public**, so secret scanning and push protection matter.
+  Both were already enabled on the repository.
+- **Hardened CI:** added a repo-wide `Guard against committed secrets` step that
+  fails the build if any tracked file (outside `docs/`, `*.example` and the
+  workflow itself) contains a legacy Supabase JWT or an `sb_secret_` key.
+
+Chat exposure still requires rotation - git hygiene alone cannot undo it.
+
+### 12.5 Manual runbook - rotate the legacy JWT secret
+
+Order matters so production never runs on a dead key:
+
+1. Supabase Dashboard -> Project Settings -> API -> JWT Settings -> **Rotate JWT
+   secret**. Copy the new `anon` and `service_role` keys.
+2. Vercel -> Project -> Settings -> Environment Variables. Update, for
+   **Production, Preview and Development**:
+   - `SUPABASE_ANON_KEY`
+   - `VITE_SUPABASE_ANON_KEY`
+   - `SUPABASE_SERVICE_ROLE_KEY`
+3. Redeploy (with the build cache disabled so the new `VITE_*` value is inlined).
+4. Update local secrets: `backend/.env`, `frontend/.env` and `.env.vercel`.
+5. Verify on the live domain: `/api/v1/health`, owner login, and one POS sale.
+   Existing sessions are signed with the old secret and will be logged out -
+   expected.
+6. Only after verification, treat the old keys as retired. If any old key still
+   works, step 1 did not rotate the right secret.
+
+### 12.6 Still open after today
+
+- Complete 12.5 (rotate the JWT secret) and re-verify production.
 - Add the SQL smoke tests to CI.
 - Add an ESLint flat config.
 - Route-level code splitting (bundle still ~1.1 MB).
