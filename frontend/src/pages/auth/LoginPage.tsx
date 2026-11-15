@@ -121,7 +121,7 @@ export default function LoginPage() {
                   required
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
-                  placeholder="\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022"
+                  placeholder="Password"
                   className="pl-9 pr-10"
                 />
                 <button

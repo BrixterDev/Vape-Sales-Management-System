@@ -37,6 +37,14 @@
     height: 100%;
   }
 
+  /* Never let a stray element create a page-wide horizontal pan on mobile.
+     Wide content (tables) scrolls inside its own overflow-x-auto wrapper. */
+  html,
+  body {
+    overflow-x: hidden;
+    overflow-x: clip;
+  }
+
   body {
     background-color: var(--color-canvas);
     color: var(--color-foreground);
